@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="description" content="רשימת קניות בעברית - אפליקציית רשימת קניות חכמה עם תמיכה מלאה ב-RTL">
+    <meta name="theme-color" content="#4a90e2">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="רשימת קניות">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="msapplication-TileColor" content="#4a90e2">
+    <meta name="msapplication-TileImage" content="icon-192.png">
+    <title>רשימת קניות</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 רשימת קניות</h1>
+            <div class="header-actions">
+                <button id="shoppingModeToggle" class="btn-icon" aria-label="מצב קניות" title="מצב קניות">
+                    🛒
+                </button>
+                <button id="darkModeToggle" class="btn-icon" aria-label="מצב כהה" title="מצב כהה">
+                    <span class="toggle-icon">🌙</span>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <!-- Smart Summary -->
+            <section id="smartSummary" class="smart-summary">
+                <div class="summary-stats">
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalItems">0</span>
+                        <span class="stat-label">סה"כ פריטים</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="purchasedItems">0</span>
+                        <span class="stat-label">נקנו</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="remainingItems">0</span>
+                        <span class="stat-label">נותרו</span>
+                    </div>
+                </div>
+                <button id="toggleCategoryBreakdown" class="btn-link">הצג לפי קטגוריה</button>
+                <div id="categoryBreakdown" class="category-breakdown" style="display: none;"></div>
+            </section>
+
+            <!-- Recurring Products Suggestions -->
+            <section id="recurringSuggestions" class="recurring-suggestions" style="display: none;">
+                <div class="suggestions-header">
+                    <h3>💡 מוצרים חוזרים מוצעים</h3>
+                    <button id="dismissSuggestions" class="btn-icon-small">✕</button>
+                </div>
+                <div id="recurringItemsList" class="suggestions-list"></div>
+            </section>
+
+            <!-- Form to add new items -->
+            <section class="add-item-section">
+                <h2>הוסף פריט חדש</h2>
+                <form id="addItemForm" class="add-item-form">
+                    <div class="form-group autocomplete-wrapper">
+                        <label for="itemName">שם המוצר <span class="required">*</span></label>
+                        <input 
+                            type="text" 
+                            id="itemName" 
+                            name="itemName" 
+                            required 
+                            placeholder="לדוגמה: חלב, לחם, ביצים..."
+                            autocomplete="off"
+                        >
+                        <div id="autocompleteDropdown" class="autocomplete-dropdown"></div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="itemQuantity">כמות</label>
+                            <input 
+                                type="text" 
+                                id="itemQuantity" 
+                                name="itemQuantity" 
+                                placeholder="לדוגמה: 1 ק״ג, 2 חבילות..."
+                                autocomplete="off"
+                            >
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="itemCategory">קטגוריה</label>
+                            <input 
+                                type="text" 
+                                id="itemCategory" 
+                                name="itemCategory" 
+                                placeholder="לדוגמה: ירקות, מוצרי חלב..."
+                                autocomplete="off"
+                            >
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">הוסף לרשימה</button>
+                </form>
+            </section>
+
+            <!-- Navigation Tabs -->
+            <nav class="tabs-nav">
+                <button class="tab-btn active" data-tab="current">הרשימה שלי</button>
+                <button class="tab-btn" data-tab="favorites">מוצרים קבועים</button>
+                <button class="tab-btn" data-tab="history">היסטוריית קניות</button>
+            </nav>
+
+            <!-- Sharing Section -->
+            <section id="sharingSection" class="sharing-section" style="display: none;">
+                <div class="sharing-header">
+                    <h3>🔗 שיתוף רשימה</h3>
+                    <button id="closeSharing" class="btn-icon-small">✕</button>
+                </div>
+                <div class="sharing-content">
+                    <div class="share-link-display">
+                        <label>קישור לשיתוף:</label>
+                        <div class="share-link-wrapper">
+                            <input type="text" id="shareLinkInput" readonly>
+                            <button id="copyShareLink" class="btn btn-primary">העתק קישור</button>
+                        </div>
+                        <p class="share-hint">שלח את הקישור הזה לאחרים כדי לשתף את הרשימה</p>
+                    </div>
+                    <div class="share-actions">
+                        <button id="generateNewLink" class="btn btn-secondary">צור קישור חדש</button>
+                        <button id="stopSharing" class="btn btn-danger">הפסק שיתוף</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Current Shopping list -->
+            <section id="currentTab" class="tab-content active">
+                <div class="list-header">
+                    <h2>הרשימה שלי</h2>
+                    <div class="list-actions">
+                        <button id="shareListBtn" class="btn btn-secondary btn-small">🔗 שתף</button>
+                        <button id="smartCleanupBtn" class="btn btn-secondary btn-small" style="display: none;">
+                            🧹 נקה כפילויות
+                        </button>
+                        <button id="clearPurchasedBtn" class="btn btn-secondary btn-small" style="display: none;">
+                            נקה פריטים שנקנו
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="emptyState" class="empty-state">
+                    <p>📦 הרשימה ריקה</p>
+                    <p class="empty-state-hint">הוסף פריטים כדי להתחיל</p>
+                </div>
+                
+                <ul id="shoppingList" class="shopping-list"></ul>
+            </section>
+
+            <!-- Shopping Mode (Simplified) -->
+            <section id="shoppingModeTab" class="tab-content shopping-mode">
+                <div class="shopping-mode-header">
+                    <h2>🛒 מצב קניות</h2>
+                    <button id="exitShoppingMode" class="btn btn-secondary">יציאה ממצב קניות</button>
+                </div>
+                <div class="shopping-mode-stats">
+                    <span id="shoppingModeRemaining">0</span> פריטים נותרו
+                </div>
+                <ul id="shoppingModeList" class="shopping-mode-list"></ul>
+            </section>
+
+            <!-- Favorites Section -->
+            <section id="favoritesTab" class="tab-content">
+                <div class="list-header">
+                    <h2>מוצרים קבועים</h2>
+                </div>
+                
+                <div id="favoritesEmptyState" class="empty-state">
+                    <p>⭐ אין מוצרים קבועים</p>
+                    <p class="empty-state-hint">סמן פריטים בכוכב כדי לשמור אותם כמועדפים</p>
+                </div>
+                
+                <ul id="favoritesList" class="shopping-list"></ul>
+            </section>
+
+            <!-- History Section -->
+            <section id="historyTab" class="tab-content">
+                <div class="list-header">
+                    <h2>היסטוריית קניות</h2>
+                </div>
+                
+                <div id="historyEmptyState" class="empty-state">
+                    <p>📚 אין היסטוריה</p>
+                    <p class="empty-state-hint">רשימות קודמות יופיעו כאן לאחר שתנקה את הרשימה או תסמן הכל כנקנה</p>
+                </div>
+                
+                <div id="historyList" class="history-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // רישום Service Worker לתמיכה ב-PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js', { scope: './' })
+                    .then((registration) => {
+                        console.log('Service Worker נרשם בהצלחה:', registration.scope);
+                        
+                        // בדיקת עדכונים כל שעה
+                        setInterval(() => {
+                            registration.update();
+                        }, 3600000);
+                        
+                        // טיפול בעדכון Service Worker
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // יש עדכון חדש - אפשר להציג הודעה למשתמש
+                                    if (confirm('יש עדכון חדש לאפליקציה. האם לעדכן עכשיו?')) {
+                                        newWorker.postMessage({ type: 'SKIP_WAITING' });
+                                        window.location.reload();
+                                    }
+                                }
+                            });
+                        });
+                    })
+                    .catch((error) => {
+                        console.error('שגיאה ברישום Service Worker:', error);
+                    });
+            });
+            
+            // טיפול בעדכון Service Worker
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    refreshing = true;
+                    window.location.reload();
+                }
+            });
+        }
+        
+        // הוספת האפליקציה למסך הבית (אם אפשר)
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // אפשר להציג כפתור התקנה מותאם אישית
+            // showInstallButton();
+        });
+        
+        // טיפול בהתקנה מוצלחת
+        window.addEventListener('appinstalled', () => {
+            console.log('האפליקציה הותקנה בהצלחה');
+            deferredPrompt = null;
+        });
+    </script>
+</body>
+</html>

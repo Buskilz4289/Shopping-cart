@@ -1,0 +1,23 @@
+{
+  "name": "shopping-list-hebrew",
+  "version": "1.0.0",
+  "description": "אפליקציית רשימת קניות בעברית עם תמיכה מלאה ב-RTL",
+  "scripts": {
+    "generate-icons": "node generate-icons.js",
+    "serve": "http-server -p 8000"
+  },
+  "keywords": [
+    "shopping-list",
+    "hebrew",
+    "rtl",
+    "pwa"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "canvas": "^2.11.2"
+  },
+  "optionalDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
