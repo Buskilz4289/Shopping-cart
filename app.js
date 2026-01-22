@@ -239,38 +239,35 @@ function exitShoppingMode() {
 }
 
 function renderShoppingMode() {
-    // הצג את כל הפריטים שלא נקנו
-    const allItems = shoppingList.filter(item => !item.purchased);
+    // הפרד בין פריטים שלא נקנו לפריטים שנקנו
+    const unpurchasedItems = shoppingList.filter(item => !item.purchased);
+    const purchasedItems = shoppingList.filter(item => item.purchased);
+    
     shoppingModeList.innerHTML = '';
     
-    const remaining = allItems.length;
+    const remaining = unpurchasedItems.length;
     document.getElementById('shoppingModeRemaining').textContent = remaining;
     
-    // אם אין פריטים, הצג הודעה
-    if (allItems.length === 0) {
+    // אם אין פריטים בכלל, הצג הודעה
+    if (shoppingList.length === 0) {
         const emptyMsg = document.createElement('li');
         emptyMsg.className = 'shopping-mode-empty';
-        emptyMsg.textContent = '✅ כל הפריטים נקנו!';
+        emptyMsg.textContent = '📦 הרשימה ריקה';
         shoppingModeList.appendChild(emptyMsg);
-        
-        // הצג כפתור סיום קנייה
-        const footer = document.querySelector('.shopping-mode-footer');
-        if (footer) {
-            footer.style.display = 'block';
-        }
         return;
     }
     
-    allItems.forEach(item => {
+    // הצג תחילה את הפריטים שלא נקנו
+    unpurchasedItems.forEach(item => {
         const li = document.createElement('li');
         li.className = 'shopping-mode-item';
         li.dataset.itemId = item.id;
         
-        // כפתור V/X - X כי לא נקנה
+        // כפתור V - לחץ לסמן כנקנה
         const statusBtn = document.createElement('button');
         statusBtn.className = 'shopping-mode-status not-purchased';
-        statusBtn.textContent = '✗';
-        statusBtn.setAttribute('aria-label', 'לא נקנה - לחץ לסמן כנקנה');
+        statusBtn.textContent = '✓';
+        statusBtn.setAttribute('aria-label', 'לחץ לסמן כנקנה');
         statusBtn.addEventListener('click', () => {
             togglePurchased(item.id);
             renderShoppingMode();
@@ -300,8 +297,48 @@ function renderShoppingMode() {
         shoppingModeList.appendChild(li);
     });
     
+    // הצג אחר כך את הפריטים שנקנו (עם קו חוצה) בתחתית
+    purchasedItems.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'shopping-mode-item purchased';
+        li.dataset.itemId = item.id;
+        
+        // כפתור V - לחץ לבטל סימון
+        const statusBtn = document.createElement('button');
+        statusBtn.className = 'shopping-mode-status purchased';
+        statusBtn.textContent = '✓';
+        statusBtn.setAttribute('aria-label', 'נקנה - לחץ לבטל סימון');
+        statusBtn.addEventListener('click', () => {
+            togglePurchased(item.id);
+            renderShoppingMode();
+            updateSmartSummary();
+            hapticFeedback();
+        });
+        
+        const content = document.createElement('div');
+        content.className = 'shopping-mode-content';
+        
+        const name = document.createElement('div');
+        name.className = 'shopping-mode-name purchased-name';
+        name.textContent = item.name;
+        
+        // כמות ליד השם
+        if (item.quantity) {
+            const quantitySpan = document.createElement('span');
+            quantitySpan.className = 'shopping-mode-quantity';
+            quantitySpan.textContent = item.quantity;
+            name.appendChild(quantitySpan);
+        }
+        
+        content.appendChild(name);
+        
+        li.appendChild(statusBtn);
+        li.appendChild(content);
+        shoppingModeList.appendChild(li);
+    });
+    
     // עדכן את כפתור סיום קנייה - הצג אם יש פריטים שנקנו
-    const purchasedCount = shoppingList.filter(item => item.purchased).length;
+    const purchasedCount = purchasedItems.length;
     const footer = document.querySelector('.shopping-mode-footer');
     if (footer) {
         footer.style.display = purchasedCount > 0 ? 'block' : 'none';
@@ -315,6 +352,7 @@ async function handleAddItem(e) {
     const formData = new FormData(e.target);
     const itemName = formData.get('itemName').trim();
     const itemQuantity = formData.get('itemQuantity').trim();
+    const itemCategory = formData.get('itemCategory').trim();
     
     if (!itemName) {
         return;
@@ -336,7 +374,7 @@ async function handleAddItem(e) {
         id: Date.now().toString(),
         name: itemName,
         quantity: itemQuantity || null,
-        category: null, // הסרנו קטגוריה
+        category: itemCategory || null,
         purchased: false,
         favorite: false,
         createdAt: new Date().toISOString()
@@ -346,6 +384,7 @@ async function handleAddItem(e) {
     if (existingFavorite) {
         newItem.favorite = true;
         newItem.quantity = newItem.quantity || existingFavorite.quantity;
+        newItem.category = newItem.category || existingFavorite.category;
     }
     
     shoppingList.push(newItem);
