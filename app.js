@@ -443,27 +443,20 @@ function createShoppingModeItem(item, isPurchased) {
     const content = document.createElement('div');
     content.className = 'shopping-mode-content';
     
-    // קטגוריה
-    if (item.category) {
-        const categorySpan = document.createElement('span');
-        categorySpan.className = 'shopping-mode-category';
-        categorySpan.textContent = item.category;
-        content.appendChild(categorySpan);
-    }
+    // שורה ראשונה: שם + כמות + כפתור מחק
+    const nameRow = document.createElement('div');
+    nameRow.className = 'shopping-mode-name-row';
     
-    const name = document.createElement('div');
+    const name = document.createElement('span');
     name.className = `shopping-mode-name ${isPurchased ? 'purchased-name' : ''}`;
     name.textContent = item.name;
     
-    // כמות - עריכה
-    const quantityWrapper = document.createElement('div');
-    quantityWrapper.className = 'shopping-mode-quantity-wrapper';
-    
+    // כמות - עריכה קטנה ליד השם
     const quantityInput = document.createElement('input');
     quantityInput.type = 'text';
-    quantityInput.className = 'shopping-mode-quantity-input';
+    quantityInput.className = 'shopping-mode-quantity-inline';
     quantityInput.value = item.quantity || '1';
-    quantityInput.placeholder = 'כמות';
+    quantityInput.placeholder = '1';
     quantityInput.addEventListener('blur', () => {
         updateItemQuantity(item.id, quantityInput.value.trim());
     });
@@ -472,10 +465,27 @@ function createShoppingModeItem(item, isPurchased) {
             quantityInput.blur();
         }
     });
-    quantityWrapper.appendChild(quantityInput);
     
-    content.appendChild(name);
-    content.appendChild(quantityWrapper);
+    // כפתור מחק - איקס אדום
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-delete shopping-mode-delete';
+    deleteBtn.innerHTML = '✕';
+    deleteBtn.addEventListener('click', () => deleteItem(item.id));
+    deleteBtn.setAttribute('aria-label', `מחק ${item.name}`);
+    
+    nameRow.appendChild(name);
+    nameRow.appendChild(quantityInput);
+    nameRow.appendChild(deleteBtn);
+    
+    // קטגוריה (אם יש) - בשורה נפרדת קטנה
+    if (item.category) {
+        const categorySpan = document.createElement('span');
+        categorySpan.className = 'shopping-mode-category';
+        categorySpan.textContent = item.category;
+        content.appendChild(categorySpan);
+    }
+    
+    content.appendChild(nameRow);
     
     li.appendChild(statusBtn);
     li.appendChild(content);
@@ -1256,22 +1266,20 @@ function createListItem(item) {
     const content = document.createElement('div');
     content.className = 'item-content';
     
-    const name = document.createElement('div');
+    // שורה ראשונה: שם + כמות + כפתורים
+    const nameRow = document.createElement('div');
+    nameRow.className = 'item-name-row';
+    
+    const name = document.createElement('span');
     name.className = 'item-name';
     name.textContent = item.name;
     
-    const details = document.createElement('div');
-    details.className = 'item-details';
-    
-    // כמות - עריכה
-    const quantityWrapper = document.createElement('div');
-    quantityWrapper.className = 'item-quantity-edit-wrapper';
-    
+    // כמות - עריכה קטנה ליד השם
     const quantityInput = document.createElement('input');
     quantityInput.type = 'text';
-    quantityInput.className = 'item-quantity-edit-input';
-    quantityInput.value = item.quantity || '';
-    quantityInput.placeholder = 'כמות';
+    quantityInput.className = 'item-quantity-inline';
+    quantityInput.value = item.quantity || '1';
+    quantityInput.placeholder = '1';
     quantityInput.addEventListener('blur', () => {
         updateItemQuantity(item.id, quantityInput.value.trim());
     });
@@ -1280,42 +1288,38 @@ function createListItem(item) {
             quantityInput.blur();
         }
     });
-    quantityWrapper.appendChild(quantityInput);
     
-    if (item.category) {
-        const categorySpan = document.createElement('span');
-        categorySpan.className = 'item-detail';
-        categorySpan.textContent = `קטגוריה: ${item.category}`;
-        details.appendChild(categorySpan);
-    }
-    
-    content.appendChild(name);
-    content.appendChild(quantityWrapper);
-    if (details.children.length > 0) {
-        content.appendChild(details);
-    }
-    
-    const actions = document.createElement('div');
-    actions.className = 'item-actions';
-    
+    // כפתור כוכב
     const starBtn = document.createElement('button');
     starBtn.className = `star-btn ${item.favorite ? 'favorite' : ''}`;
     starBtn.textContent = '⭐';
     starBtn.addEventListener('click', () => toggleFavorite(item.id));
     starBtn.setAttribute('aria-label', item.favorite ? `הסר ${item.name} ממועדפים` : `סמן ${item.name} כמועדף`);
     
+    // כפתור מחק - איקס אדום
     const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'btn btn-danger';
-    deleteBtn.textContent = 'מחק';
+    deleteBtn.className = 'btn-delete';
+    deleteBtn.innerHTML = '✕';
     deleteBtn.addEventListener('click', () => deleteItem(item.id));
     deleteBtn.setAttribute('aria-label', `מחק ${item.name}`);
     
-    actions.appendChild(starBtn);
-    actions.appendChild(deleteBtn);
+    nameRow.appendChild(name);
+    nameRow.appendChild(quantityInput);
+    nameRow.appendChild(starBtn);
+    nameRow.appendChild(deleteBtn);
+    
+    // קטגוריה (אם יש) - בשורה נפרדת קטנה
+    if (item.category) {
+        const categorySpan = document.createElement('span');
+        categorySpan.className = 'item-category-small';
+        categorySpan.textContent = item.category;
+        content.appendChild(categorySpan);
+    }
+    
+    content.appendChild(nameRow);
     
     li.appendChild(checkbox);
     li.appendChild(content);
-    li.appendChild(actions);
     
     return li;
 }
