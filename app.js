@@ -29,36 +29,6 @@ const CATEGORIES = [
     'שונות'
 ];
 
-// מוצרים קבועים מוגדרים מראש (מוצגים לכולם)
-const DEFAULT_FAVORITES = [
-    { name: 'חלב', category: 'מוצרי חלב', quantity: '1 ליטר' },
-    { name: 'ביצים', category: 'מוצרי חלב', quantity: '12' },
-    { name: 'גבינה צהובה', category: 'מוצרי חלב', quantity: '200 גרם' },
-    { name: 'יוגורט', category: 'מוצרי חלב', quantity: '4 יחידות' },
-    { name: 'לחם', category: 'מוצרי יסוד', quantity: '1 כיכר' },
-    { name: 'פסטה', category: 'מוצרי יסוד', quantity: '500 גרם' },
-    { name: 'אורז', category: 'מוצרי יסוד', quantity: '1 ק"ג' },
-    { name: 'שמן', category: 'מוצרי יסוד', quantity: '1 בקבוק' },
-    { name: 'עגבניות', category: 'פירות וירקות', quantity: '1 ק"ג' },
-    { name: 'מלפפונים', category: 'פירות וירקות', quantity: '1 ק"ג' },
-    { name: 'בננות', category: 'פירות וירקות', quantity: '1 ק"ג' },
-    { name: 'תפוחים', category: 'פירות וירקות', quantity: '1 ק"ג' },
-    { name: 'עוף', category: 'בשר | עופות | דגים', quantity: '1 ק"ג' },
-    { name: 'בשר טחון', category: 'בשר | עופות | דגים', quantity: '500 גרם' },
-    { name: 'דג סלמון', category: 'בשר | עופות | דגים', quantity: '500 גרם' },
-    { name: 'מים', category: 'משקאות', quantity: '6 בקבוקים' },
-    { name: 'מיץ', category: 'משקאות', quantity: '1 ליטר' },
-    { name: 'קפה', category: 'משקאות', quantity: '250 גרם' },
-    { name: 'גלידה', category: 'קפואים', quantity: '1 ליטר' },
-    { name: 'ירקות קפואים', category: 'קפואים', quantity: '500 גרם' },
-    { name: 'מלח', category: 'תבלינים ואפייה', quantity: '1 יחידה' },
-    { name: 'פלפל שחור', category: 'תבלינים ואפייה', quantity: '1 יחידה' },
-    { name: 'סוכר', category: 'תבלינים ואפייה', quantity: '1 ק"ג' },
-    { name: 'קמח', category: 'תבלינים ואפייה', quantity: '1 ק"ג' },
-    { name: 'נייר טואלט', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 חבילה' },
-    { name: 'סבון כלים', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 יחידה' },
-    { name: 'מגבונים', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 חבילה' }
-];
 
 // אלמנטי DOM
 const addItemForm = document.getElementById('addItemForm');
@@ -106,7 +76,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateSmartSummary();
     }
     
-    // וודא שמוצרים קבועים מוגדרים מראש נטענו
+    // טען מועדפים
     loadFavorites();
     
     setupEventListeners();
@@ -122,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// טעינת מוצרים קבועים - שילוב של מוצרים מוגדרים מראש ומוצרים שנשמרו
+// טעינת מוצרים קבועים
 function loadFavorites() {
     // טען מוצרים שנשמרו ב-localStorage
     const savedFavorites = localStorage.getItem('favorites');
@@ -133,26 +103,9 @@ function loadFavorites() {
         } catch (e) {
             favorites = [];
         }
+    } else {
+        favorites = [];
     }
-    
-    // הוסף מוצרים מוגדרים מראש שלא קיימים כבר
-    DEFAULT_FAVORITES.forEach(defaultFav => {
-        const exists = favorites.some(f => 
-            normalizeText(f.name) === normalizeText(defaultFav.name)
-        );
-        if (!exists) {
-            favorites.push({
-                id: `default-${Date.now()}-${Math.random()}`,
-                name: defaultFav.name,
-                category: defaultFav.category,
-                quantity: defaultFav.quantity,
-                isDefault: true
-            });
-        }
-    });
-    
-    // שמור את הרשימה המעודכנת
-    saveFavoritesToLocalStorage();
 }
 
 // הגדרת מאזיני אירועים
@@ -545,7 +498,6 @@ async function toggleFavorite(itemId) {
                 name: item.name,
                 quantity: item.quantity,
                 category: item.category || 'שונות',
-                isDefault: false,
                 addedAt: new Date().toISOString()
             };
             
@@ -553,8 +505,8 @@ async function toggleFavorite(itemId) {
                 favorites.push(favoriteItem);
             }
         } else {
-            // הסר ממועדפים (רק אם לא מוגדר מראש)
-            favorites = favorites.filter(f => f.id !== itemId || f.isDefault);
+            // הסר ממועדפים
+            favorites = favorites.filter(f => f.id !== itemId);
         }
         
         saveToLocalStorage();
@@ -846,12 +798,6 @@ async function addFavoriteToList(favoriteId) {
 async function deleteFavorite(favoriteId) {
     const favorite = favorites.find(f => f.id === favoriteId);
     if (!favorite) return;
-    
-    // אם זה מוצר מוגדר מראש, לא ניתן למחוק אותו
-    if (favorite.isDefault) {
-        alert('לא ניתן למחוק מוצר מוגדר מראש');
-        return;
-    }
     
     if (confirm('האם אתה בטוח שברצונך להסיר פריט זה מהמועדפים?')) {
         favorites = favorites.filter(f => f.id !== favoriteId);
@@ -1921,12 +1867,10 @@ function loadFromLocalStorage() {
     }
 }
 
-// שמירת מועדפים ל-localStorage (רק מועדפים שהוספו על ידי המשתמש)
+// שמירת מועדפים ל-localStorage
 function saveFavoritesToLocalStorage() {
     try {
-        // שמור רק מועדפים שהוספו על ידי המשתמש (לא מוגדרים מראש)
-        const userFavorites = favorites.filter(f => !f.isDefault);
-        localStorage.setItem('favorites', JSON.stringify(userFavorites));
+        localStorage.setItem('favorites', JSON.stringify(favorites));
     } catch (error) {
         console.error('שגיאה בשמירת מועדפים:', error);
     }
