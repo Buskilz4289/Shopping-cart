@@ -38,23 +38,40 @@ const recurringSuggestions = document.getElementById('recurringSuggestions');
 const sharingSection = document.getElementById('sharingSection');
 
 // אתחול האפליקציה
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // אתחול Firebase קודם כל
+    if (FirebaseManager && FirebaseManager.init()) {
+        console.log('Firebase אותחל בהצלחה');
+    } else {
+        console.warn('Firebase לא אותחל - שיתוף לא יעבוד');
+    }
+    
     // בדיקה אם יש list ID ב-URL
     checkUrlForListId();
     
-    loadFromLocalStorage();
-    detectRecurringItems();
-    renderList();
-    renderFavorites();
-    renderHistory();
-    updateSmartSummary();
+    // טעינת נתונים - אם יש listId משותף, נטען מ-Firebase, אחרת מ-localStorage
+    if (sharedListId) {
+        await loadSharedListFromFirebase();
+    } else {
+        loadFromLocalStorage();
+        detectRecurringItems();
+        renderList();
+        renderFavorites();
+        renderHistory();
+        updateSmartSummary();
+    }
+    
     setupEventListeners();
     loadTheme();
     checkAndSaveHistory();
     setupSharing();
     setupAutocomplete();
     setupMobileGestures();
-    startSharingSync();
+    
+    // סנכרון תור offline אם יש חיבור
+    if (FirebaseManager && FirebaseManager.database) {
+        FirebaseManager.syncOfflineQueue();
+    }
 });
 
 // הגדרת מאזיני אירועים
@@ -188,7 +205,7 @@ function renderShoppingMode() {
 }
 
 // הוספת פריט חדש
-function handleAddItem(e) {
+async function handleAddItem(e) {
     e.preventDefault();
     
     const formData = new FormData(e.target);
@@ -233,8 +250,7 @@ function handleAddItem(e) {
     saveToLocalStorage();
     renderList();
     updateSmartSummary();
-    syncSharedList();
-    updateUrlWithListId();
+    await syncSharedList();
     updateUrlWithListId();
     
     e.target.reset();
@@ -244,7 +260,7 @@ function handleAddItem(e) {
 }
 
 // סימון כנקנה/לא נקנה
-function togglePurchased(itemId) {
+async function togglePurchased(itemId) {
     const item = shoppingList.find(i => i.id === itemId);
     if (item) {
         item.purchased = !item.purchased;
@@ -252,14 +268,13 @@ function togglePurchased(itemId) {
         renderList();
         updateSmartSummary();
         checkAndSaveHistory();
-        syncSharedList();
-    updateUrlWithListId();
+        await syncSharedList();
         hapticFeedback();
     }
 }
 
 // סימון כמועדף
-function toggleFavorite(itemId) {
+async function toggleFavorite(itemId) {
     const item = shoppingList.find(i => i.id === itemId);
     if (item) {
         item.favorite = !item.favorite;
@@ -283,29 +298,26 @@ function toggleFavorite(itemId) {
         saveToLocalStorage();
         renderList();
         renderFavorites();
-        syncSharedList();
-    updateUrlWithListId();
-        updateUrlWithListId();
+        await syncSharedList();
         hapticFeedback();
     }
 }
 
 // מחיקת פריט
-function deleteItem(itemId) {
+async function deleteItem(itemId) {
     if (confirm('האם אתה בטוח שברצונך למחוק פריט זה?')) {
         shoppingList = shoppingList.filter(item => item.id !== itemId);
         saveToLocalStorage();
         renderList();
         updateSmartSummary();
         checkAndSaveHistory();
-        syncSharedList();
-    updateUrlWithListId();
+        await syncSharedList();
         hapticFeedback();
     }
 }
 
 // ניקוי פריטים שנקנו
-function handleClearPurchased() {
+async function handleClearPurchased() {
     const purchasedCount = shoppingList.filter(item => item.purchased).length;
     
     if (purchasedCount === 0) {
@@ -318,14 +330,12 @@ function handleClearPurchased() {
         saveToLocalStorage();
         renderList();
         updateSmartSummary();
-        syncSharedList();
-    updateUrlWithListId();
-        updateUrlWithListId();
+        await syncSharedList();
     }
 }
 
 // ניקוי כפילויות חכם
-function handleSmartCleanup() {
+async function handleSmartCleanup() {
     const duplicates = findDuplicates();
     
     if (duplicates.length === 0) {
@@ -347,9 +357,7 @@ function handleSmartCleanup() {
         saveToLocalStorage();
         renderList();
         updateSmartSummary();
-        syncSharedList();
-    updateUrlWithListId();
-        updateUrlWithListId();
+        await syncSharedList();
         alert(`מוזגו ${mergeCount} קבוצות של כפילויות`);
         hapticFeedback();
     }
@@ -490,7 +498,7 @@ function dismissRecurringSuggestions() {
     recurringSuggestions.style.display = 'none';
 }
 
-function addRecurringItem(item) {
+async function addRecurringItem(item) {
     const newItem = {
         id: Date.now().toString(),
         name: item.name,
@@ -506,14 +514,12 @@ function addRecurringItem(item) {
     renderList();
     updateSmartSummary();
     showRecurringSuggestions();
-    syncSharedList();
-    updateUrlWithListId();
-    updateUrlWithListId();
+    await syncSharedList();
     hapticFeedback();
 }
 
 // שחזור רשימה מהיסטוריה
-function restoreFromHistory(historyId) {
+async function restoreFromHistory(historyId) {
     const historyEntry = shoppingHistory.find(h => h.id === historyId);
     if (!historyEntry) {
         return;
@@ -534,14 +540,12 @@ function restoreFromHistory(historyId) {
         renderList();
         updateSmartSummary();
         switchTab('current');
-        syncSharedList();
-    updateUrlWithListId();
-        updateUrlWithListId();
+        await syncSharedList();
     }
 }
 
 // הוספת מועדף לרשימה
-function addFavoriteToList(favoriteId) {
+async function addFavoriteToList(favoriteId) {
     const favorite = favorites.find(f => f.id === favoriteId);
     if (!favorite) {
         return;
@@ -571,14 +575,12 @@ function addFavoriteToList(favoriteId) {
     renderList();
     updateSmartSummary();
     switchTab('current');
-    syncSharedList();
-    updateUrlWithListId();
-    updateUrlWithListId();
+    await syncSharedList();
     hapticFeedback();
 }
 
 // מחיקת מועדף
-function deleteFavorite(favoriteId) {
+async function deleteFavorite(favoriteId) {
     if (confirm('האם אתה בטוח שברצונך להסיר פריט זה מהמועדפים?')) {
         favorites = favorites.filter(f => f.id !== favoriteId);
         
@@ -591,9 +593,7 @@ function deleteFavorite(favoriteId) {
         saveToLocalStorage();
         renderFavorites();
         renderList();
-        syncSharedList();
-    updateUrlWithListId();
-        updateUrlWithListId();
+        await syncSharedList();
     }
 }
 
@@ -1147,28 +1147,61 @@ function hapticFeedback(type = 'light') {
 
 // שיתוף רשימות
 function checkUrlForListId() {
+    // בדיקת hash routing (#/list/{listId})
+    const hash = window.location.hash;
+    const hashMatch = hash.match(/^#\/list\/([^\/]+)/);
+    
+    if (hashMatch) {
+        const listId = hashMatch[1];
+        sharedListId = listId;
+        localStorage.setItem('sharedListId', sharedListId);
+        return;
+    }
+    
+    // בדיקת query parameter (תמיכה לאחור)
     const urlParams = new URLSearchParams(window.location.search);
     const listId = urlParams.get('list');
     
     if (listId) {
         sharedListId = listId;
         localStorage.setItem('sharedListId', sharedListId);
-        loadSharedList();
-        
-        // עדכון ה-URL ללא ה-parameter (אבל שמירה על ה-history)
-        if (window.history && window.history.replaceState) {
-            const newUrl = window.location.pathname;
-            window.history.replaceState({}, '', newUrl);
-        }
-    } else {
-        // אם אין list ID ב-URL, נבדוק אם יש אחד ב-localStorage
-        sharedListId = localStorage.getItem('sharedListId');
+        // עדכון ל-hash routing
+        updateUrlWithListId();
+        return;
     }
+    
+    // אם אין list ID ב-URL, נבדוק אם יש אחד ב-localStorage
+    sharedListId = localStorage.getItem('sharedListId');
 }
 
 function setupSharing() {
     if (sharedListId) {
         updateShareLink();
+        // התחלת האזנה לעדכונים בזמן אמת
+        if (FirebaseManager && FirebaseManager.database) {
+            console.log('מתחיל האזנה לרשימה:', sharedListId);
+            FirebaseManager.subscribeToList(sharedListId, (data) => {
+                if (data && data.items) {
+                    // עדכון הרשימה רק אם יש שינויים
+                    const currentItems = JSON.stringify(shoppingList);
+                    const newItems = JSON.stringify(data.items);
+                    
+                    if (currentItems !== newItems) {
+                        console.log('עדכון רשימה מ-Firebase:', data.items.length, 'פריטים');
+                        shoppingList = data.items.map(item => ({
+                            ...item,
+                            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                        }));
+                        saveToLocalStorage();
+                        renderList();
+                        updateSmartSummary();
+                        detectRecurringItems();
+                    }
+                }
+            });
+        } else {
+            console.warn('Firebase לא מוכן - לא ניתן להתחיל האזנה');
+        }
     }
 }
 
@@ -1185,13 +1218,38 @@ function hideSharingSection() {
     sharingSection.style.display = 'none';
 }
 
-function generateNewShareLink() {
+async function generateNewShareLink() {
     // יצירת מזהה ייחודי חדש
     sharedListId = 'list-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
     localStorage.setItem('sharedListId', sharedListId);
     
-    // שמירת הרשימה הנוכחית עם המזהה החדש
-    saveSharedList();
+    // שמירת הרשימה הנוכחית ב-Firebase
+    if (FirebaseManager && FirebaseManager.database) {
+        const success = await FirebaseManager.createList(sharedListId, {
+            items: shoppingList
+        });
+        
+        if (success) {
+            // התחלת האזנה לעדכונים בזמן אמת
+            FirebaseManager.subscribeToList(sharedListId, (data) => {
+                if (data && data.items) {
+                    const currentItems = JSON.stringify(shoppingList);
+                    const newItems = JSON.stringify(data.items);
+                    
+                    if (currentItems !== newItems) {
+                        shoppingList = data.items.map(item => ({
+                            ...item,
+                            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                        }));
+                        saveToLocalStorage();
+                        renderList();
+                        updateSmartSummary();
+                        detectRecurringItems();
+                    }
+                }
+            });
+        }
+    }
     
     // עדכון הקישור בממשק
     updateShareLink();
@@ -1216,34 +1274,48 @@ function getShareableUrl() {
     if (!sharedListId) return '';
     
     const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}?list=${sharedListId}`;
+    return `${baseUrl}#/list/${sharedListId}`;
 }
 
 function updateUrlWithListId() {
     if (!sharedListId) return;
     
-    // עדכון ה-URL רק אם המשתמש כבר בשיתוף פעיל
-    // לא נעדכן את ה-URL אם זה קרה בעת טעינה ראשונית מקישור
-    const currentUrl = window.location.href;
-    const hasListParam = currentUrl.includes('?list=');
-    
-    // עדכון רק אם אין כבר list parameter (כי אם יש, זה אומר שמישהו פתח קישור)
-    if (!hasListParam) {
-        const newUrl = getShareableUrl();
-        if (window.history && window.history.replaceState) {
-            // עדכון שקט של ה-URL ללא reload
-            window.history.replaceState({}, '', newUrl);
-        }
+    const newUrl = getShareableUrl();
+    if (window.history && window.history.replaceState) {
+        // עדכון שקט של ה-URL ללא reload
+        window.history.replaceState({}, '', newUrl);
     }
 }
 
-function copyShareLink() {
+async function copyShareLink() {
     const input = document.getElementById('shareLinkInput');
     if (!input || !input.value) {
         alert('אין קישור לשיתוף. אנא צור קישור חדש.');
         return;
     }
     
+    const shareUrl = input.value;
+    
+    // ניסיון שימוש ב-Web Share API אם זמין
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'רשימת קניות משותפת',
+                text: 'בואו נשתף רשימת קניות',
+                url: shareUrl
+            });
+            showCopySuccess();
+            hapticFeedback();
+            return;
+        } catch (err) {
+            // המשתמש ביטל את השיתוף - נמשיך להעתקה רגילה
+            if (err.name !== 'AbortError') {
+                console.log('שגיאה בשיתוף:', err);
+            }
+        }
+    }
+    
+    // העתקה רגילה
     input.select();
     input.setSelectionRange(0, 99999); // למובייל
     
@@ -1252,7 +1324,7 @@ function copyShareLink() {
         
         // שימוש ב-Clipboard API אם זמין
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(input.value).then(() => {
+            navigator.clipboard.writeText(shareUrl).then(() => {
                 showCopySuccess();
             });
         } else {
@@ -1261,13 +1333,13 @@ function copyShareLink() {
     } catch (err) {
         // נסה דרך Clipboard API
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(input.value).then(() => {
+            navigator.clipboard.writeText(shareUrl).then(() => {
                 showCopySuccess();
             }).catch(() => {
-                alert('לא ניתן להעתיק. אנא העתק ידנית: ' + input.value);
+                alert('לא ניתן להעתיק. אנא העתק ידנית: ' + shareUrl);
             });
         } else {
-            alert('לא ניתן להעתיק. אנא העתק ידנית: ' + input.value);
+            alert('לא ניתן להעתיק. אנא העתק ידנית: ' + shareUrl);
         }
     }
     
@@ -1286,12 +1358,17 @@ function showCopySuccess() {
     }, 2000);
 }
 
-function stopSharing() {
+async function stopSharing() {
     if (confirm('האם אתה בטוח שברצונך להפסיק את השיתוף? הקישור לא יעבוד יותר.')) {
+        // הסרת האזנה לעדכונים
+        if (FirebaseManager) {
+            FirebaseManager.unsubscribeFromList();
+        }
+        
         sharedListId = null;
         localStorage.removeItem('sharedListId');
         
-        // עדכון ה-URL להסרת ה-list parameter
+        // עדכון ה-URL להסרת ה-hash
         if (window.history && window.history.replaceState) {
             const newUrl = window.location.pathname;
             window.history.replaceState({}, '', newUrl);
@@ -1307,77 +1384,88 @@ function stopSharing() {
     }
 }
 
-function saveSharedList() {
-    if (!sharedListId) return;
-    
-    const data = {
-        list: shoppingList,
-        favorites: favorites,
-        timestamp: Date.now(),
-        version: Date.now() // גרסה לזיהוי עדכונים
-    };
-    
-    try {
-        localStorage.setItem(`shared_${sharedListId}`, JSON.stringify(data));
-    } catch (error) {
-        console.error('שגיאה בשמירת רשימה משותפת:', error);
+// טעינת רשימה משותפת מ-Firebase
+async function loadSharedListFromFirebase() {
+    if (!sharedListId) {
+        loadFromLocalStorage();
+        detectRecurringItems();
+        renderList();
+        renderFavorites();
+        renderHistory();
+        updateSmartSummary();
+        return;
     }
-}
-
-function loadSharedList() {
-    if (!sharedListId) return;
+    
+    // בדיקה אם Firebase מוכן
+    if (!FirebaseManager || !FirebaseManager.database) {
+        console.warn('Firebase לא מוכן - נטען מ-localStorage');
+        loadFromLocalStorage();
+        detectRecurringItems();
+        renderList();
+        renderFavorites();
+        renderHistory();
+        updateSmartSummary();
+        return;
+    }
     
     try {
-        const saved = localStorage.getItem(`shared_${sharedListId}`);
-        if (saved) {
-            const data = JSON.parse(saved);
-            if (data.list && Array.isArray(data.list)) {
-                // שמירת הגרסה המקומית לבדיקת עדכונים
-                const localVersion = localStorage.getItem(`shared_version_${sharedListId}`);
+        await FirebaseManager.loadList(sharedListId, (data) => {
+            if (data && data.items) {
+                shoppingList = data.items.map(item => ({
+                    ...item,
+                    id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                }));
                 
-                // טעינת הרשימה רק אם יש עדכון או שזו הפעם הראשונה
-                if (!localVersion || (data.version && data.version > parseInt(localVersion))) {
-                    shoppingList = data.list;
-                    if (data.favorites) {
-                        favorites = data.favorites;
-                    }
-                    
-                    // שמירת הגרסה המקומית
-                    if (data.version) {
-                        localStorage.setItem(`shared_version_${sharedListId}`, data.version.toString());
-                    }
-                    
-                    saveToLocalStorage();
-                    renderList();
-                    renderFavorites();
-                    updateSmartSummary();
-                    
-                    // הצגת הודעה אם זו רשימה משותפת
-                    if (window.location.search.includes('list=')) {
-                        showSharedListNotification();
-                    }
-                }
+                saveToLocalStorage();
+                detectRecurringItems();
+                renderList();
+                renderFavorites();
+                renderHistory();
+                updateSmartSummary();
+                
+                showSharedListNotification();
+            } else {
+                // אם הרשימה לא קיימת, נטען מ-localStorage
+                console.log('רשימה לא נמצאה ב-Firebase - נטען מ-localStorage');
+                loadFromLocalStorage();
+                detectRecurringItems();
+                renderList();
+                renderFavorites();
+                renderHistory();
+                updateSmartSummary();
             }
-        }
+        });
     } catch (error) {
-        console.error('שגיאה בטעינת רשימה משותפת:', error);
+        console.error('שגיאה בטעינת רשימה מ-Firebase:', error);
+        // נטען מ-localStorage במקרה של שגיאה
+        loadFromLocalStorage();
+        detectRecurringItems();
+        renderList();
+        renderFavorites();
+        renderHistory();
+        updateSmartSummary();
     }
 }
 
-function syncSharedList() {
-    if (!sharedListId) return;
-    saveSharedList();
-}
-
-function startSharingSync() {
-    if (!sharedListId) return;
+// סנכרון רשימה משותפת ל-Firebase
+async function syncSharedList() {
+    if (!sharedListId) {
+        console.log('אין sharedListId - לא מסנכרן');
+        return;
+    }
     
-    // סנכרון כל 2 שניות
-    setInterval(() => {
-        if (sharedListId) {
-            loadSharedList();
-        }
-    }, 2000);
+    if (!FirebaseManager || !FirebaseManager.database) {
+        console.warn('Firebase לא מוכן - לא ניתן לסנכרן');
+        return;
+    }
+    
+    console.log('מסנכרן רשימה ל-Firebase:', sharedListId, 'עם', shoppingList.length, 'פריטים');
+    const success = await FirebaseManager.updateList(sharedListId, shoppingList);
+    if (success) {
+        console.log('רשימה סונכרנה בהצלחה');
+    } else {
+        console.warn('שגיאה בסנכרון רשימה');
+    }
 }
 
 function showSharedListNotification() {
@@ -1478,3 +1566,4 @@ function loadTheme() {
     const icon = darkModeToggle.querySelector('.toggle-icon');
     icon.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
 }
+

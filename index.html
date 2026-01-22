@@ -17,12 +17,19 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
     <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📝 רשימת קניות</h1>
             <div class="header-actions">
+                <button id="installButton" class="btn-icon" aria-label="התקן אפליקציה" title="התקן אפליקציה" style="display: none;">
+                    📲
+                </button>
                 <button id="shoppingModeToggle" class="btn-icon" aria-label="מצב קניות" title="מצב קניות">
                     🛒
                 </button>
@@ -141,7 +148,7 @@
                 <div class="list-header">
                     <h2>הרשימה שלי</h2>
                     <div class="list-actions">
-                        <button id="shareListBtn" class="btn btn-secondary btn-small">🔗 שתף</button>
+                        <button id="shareListBtn" class="btn btn-secondary btn-small">🔗 שתף רשימה</button>
                         <button id="smartCleanupBtn" class="btn btn-secondary btn-small" style="display: none;">
                             🧹 נקה כפילויות
                         </button>
@@ -201,6 +208,8 @@
         </main>
     </div>
 
+    <script src="firebase-config.js"></script>
+    <script src="firebase.js"></script>
     <script src="app.js"></script>
     <script>
         // רישום Service Worker לתמיכה ב-PWA
@@ -247,18 +256,55 @@
         
         // הוספת האפליקציה למסך הבית (אם אפשר)
         let deferredPrompt;
+        const installButton = document.getElementById('installButton');
+        
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
             
-            // אפשר להציג כפתור התקנה מותאם אישית
-            // showInstallButton();
+            // הצג את כפתור ההתקנה
+            if (installButton) {
+                installButton.style.display = 'flex';
+            }
         });
+        
+        // טיפול בלחיצה על כפתור ההתקנה
+        if (installButton) {
+            installButton.addEventListener('click', async () => {
+                if (!deferredPrompt) {
+                    return;
+                }
+                
+                // הצג את דיאלוג ההתקנה
+                deferredPrompt.prompt();
+                
+                // המתן לתשובת המשתמש
+                const { outcome } = await deferredPrompt.userChoice;
+                
+                if (outcome === 'accepted') {
+                    console.log('המשתמש אישר את ההתקנה');
+                } else {
+                    console.log('המשתמש דחה את ההתקנה');
+                }
+                
+                deferredPrompt = null;
+                
+                // הסתר את הכפתור
+                if (installButton) {
+                    installButton.style.display = 'none';
+                }
+            });
+        }
         
         // טיפול בהתקנה מוצלחת
         window.addEventListener('appinstalled', () => {
             console.log('האפליקציה הותקנה בהצלחה');
             deferredPrompt = null;
+            
+            // הסתר את הכפתור אחרי התקנה
+            if (installButton) {
+                installButton.style.display = 'none';
+            }
         });
     </script>
 </body>

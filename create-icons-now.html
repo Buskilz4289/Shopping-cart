@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>יצירת איקונים - אוטומטי</title>
+    <style>
+        body {
+            font-family: system-ui, Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+            text-align: center;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        canvas {
+            border: 2px solid #ddd;
+            margin: 20px auto;
+            display: block;
+            border-radius: 8px;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #e8f4f8;
+            color: #2c3e50;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 יצירת איקונים</h1>
+        <div id="status" class="status">יוצר איקונים...</div>
+        <canvas id="icon192" width="192" height="192" style="display:none;"></canvas>
+        <canvas id="icon512" width="512" height="512" style="display:none;"></canvas>
+    </div>
+
+    <script>
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            
+            // רקע כחול עם גרדיאנט
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#4a90e2');
+            gradient.addColorStop(1, '#357abd');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+            
+            // עיגול לבן
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(size / 2, size / 2, size * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // רשימה (קווים)
+            ctx.strokeStyle = '#4a90e2';
+            ctx.lineWidth = Math.max(2, size * 0.03);
+            ctx.lineCap = 'round';
+            
+            const centerX = size / 2;
+            const centerY = size / 2;
+            const lineLength = size * 0.15;
+            const spacing = size * 0.08;
+            
+            // 3 קווים
+            for (let i = 0; i < 3; i++) {
+                const y = centerY - spacing + (i * spacing);
+                ctx.beginPath();
+                ctx.moveTo(centerX - lineLength, y);
+                ctx.lineTo(centerX + lineLength, y);
+                ctx.stroke();
+            }
+            
+            // V (סימון) על הקו הראשון
+            ctx.strokeStyle = '#27ae60';
+            ctx.lineWidth = Math.max(3, size * 0.04);
+            const checkSize = size * 0.08;
+            const checkX = centerX - lineLength + checkSize;
+            const checkY = centerY - spacing;
+            ctx.beginPath();
+            ctx.moveTo(checkX - checkSize/2, checkY);
+            ctx.lineTo(checkX, checkY + checkSize/2);
+            ctx.lineTo(checkX + checkSize/2, checkY - checkSize/3);
+            ctx.stroke();
+        }
+
+        function downloadIcon(size) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const canvas = document.getElementById(`icon${size}`);
+                    if (!canvas) {
+                        reject(new Error(`Canvas לא נמצא עבור גודל ${size}`));
+                        return;
+                    }
+                    
+                    canvas.toBlob((blob) => {
+                        if (!blob) {
+                            reject(new Error(`לא ניתן ליצור blob עבור גודל ${size}`));
+                            return;
+                        }
+                        
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `icon-${size}.png`;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        
+                        // טריגר הורדה
+                        setTimeout(() => {
+                            a.click();
+                            setTimeout(() => {
+                                document.body.removeChild(a);
+                                URL.revokeObjectURL(url);
+                                resolve();
+                            }, 100);
+                        }, 50);
+                    }, 'image/png');
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        }
+
+        async function createIcons() {
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                // צייר את האיקונים קודם
+                statusDiv.textContent = 'יוצר איקון 192x192...';
+                drawIcon(document.getElementById('icon192'), 192);
+                
+                statusDiv.textContent = 'יוצר איקון 512x512...';
+                drawIcon(document.getElementById('icon512'), 512);
+                
+                // המתן קצת לפני הורדה
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // הורד את הראשון
+                statusDiv.textContent = 'מוריד icon-192.png...';
+                await downloadIcon(192);
+                
+                // המתן יותר זמן בין הורדות (חלק מהדפדפנים חוסמים הורדות מרובות)
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // הורד את השני
+                statusDiv.textContent = 'מוריד icon-512.png...';
+                await downloadIcon(512);
+                
+                statusDiv.className = 'status success';
+                statusDiv.innerHTML = '✅ <strong>האיקונים נוצרו והורדו בהצלחה!</strong><br><br>הקבצים icon-192.png ו-icon-512.png הורדו.<br>העתק אותם לתיקיית הפרויקט (אותה תיקייה כמו index.html).';
+            } catch (error) {
+                statusDiv.className = 'status';
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.innerHTML = '❌ שגיאה ביצירת האיקונים: ' + error.message + '<br><br>נסה לרענן את הדף ולנסות שוב.';
+                console.error('שגיאה:', error);
+            }
+        }
+
+        // התחל אוטומטית בעת טעינת הדף
+        window.addEventListener('load', () => {
+            setTimeout(createIcons, 500);
+        });
+    </script>
+</body>
+</html>
