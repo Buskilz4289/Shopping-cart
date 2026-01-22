@@ -1,7 +1,7 @@
 // Service Worker for רשימת קניות
 // מאפשר שימוש באפליקציה במצב offline מלא
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `shopping-list-${CACHE_VERSION}`;
 const STATIC_CACHE_NAME = `shopping-list-static-${CACHE_VERSION}`;
 
@@ -84,20 +84,23 @@ function isStaticAsset(url) {
   return STATIC_ASSETS.some(asset => url.includes(asset));
 }
 
-// אסטרטגיית Cache First - מטמון קודם
+// אסטרטגיית Cache First - מטמון קודם, אבל תמיד בודק עדכונים ברקע
 async function cacheFirst(request) {
   try {
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    
+    // נסה מהרשת קודם כדי לקבל את הגרסה העדכנית ביותר
     const networkResponse = await fetch(request);
     
-    // שמירה במטמון למעט שגיאות
+    // אם יש תגובה מהרשת, עדכן את המטמון
     if (networkResponse.ok) {
       const cache = await caches.open(STATIC_CACHE_NAME);
       cache.put(request, networkResponse.clone());
+      return networkResponse;
+    }
+    
+    // אם הרשת נכשלה, נסה מהמטמון
+    const cachedResponse = await caches.match(request);
+    if (cachedResponse) {
+      return cachedResponse;
     }
     
     return networkResponse;
@@ -162,5 +165,22 @@ async function networkFirst(request) {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  
+  // ניקוי מטמון לפי בקשה
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    event.waitUntil(
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            console.log('[Service Worker] מחיקת מטמון:', cacheName);
+            return caches.delete(cacheName);
+          })
+        );
+      }).then(() => {
+        console.log('[Service Worker] כל המטמונים נמחקו');
+        return self.clients.claim();
+      })
+    );
   }
 });

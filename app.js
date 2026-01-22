@@ -87,10 +87,38 @@ function setupEventListeners() {
     // כפתור רענון
     const refreshButton = document.getElementById('refreshButton');
     if (refreshButton) {
-        refreshButton.addEventListener('click', () => {
-            if (confirm('האם אתה בטוח שברצונך לרענן את הדף? כל השינויים שלא נשמרו יאבדו.')) {
-                window.location.reload();
+        refreshButton.addEventListener('click', async () => {
+            // נסה לעדכן את Service Worker קודם
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        await registration.update();
+                        // נסה לשלוח הודעה ל-Service Worker לעדכן את המטמון
+                        if (registration.active) {
+                            registration.active.postMessage({ type: 'CLEAR_CACHE' });
+                        }
+                    }
+                } catch (error) {
+                    console.error('שגיאה בעדכון Service Worker:', error);
+                }
             }
+            
+            // נקה את המטמון של הדפדפן
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    await Promise.all(
+                        cacheNames.map(cacheName => caches.delete(cacheName))
+                    );
+                    console.log('מטמון נוקה בהצלחה');
+                } catch (error) {
+                    console.error('שגיאה בניקוי מטמון:', error);
+                }
+            }
+            
+            // רענון הדף
+            window.location.reload(true);
         });
     }
     
