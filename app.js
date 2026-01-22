@@ -358,7 +358,7 @@ function renderShoppingMode() {
         }
     });
     
-    // מיון פריטים בכל קטגוריה
+    // מיון פריטים בכל קטגוריה לפי א-ב (אלפבית עברי)
     Object.keys(unpurchasedByCategory).forEach(category => {
         unpurchasedByCategory[category].sort((a, b) => 
             a.name.localeCompare(b.name, 'he')
@@ -366,6 +366,11 @@ function renderShoppingMode() {
     });
     
     unpurchasedWithoutCategory.sort((a, b) => 
+        a.name.localeCompare(b.name, 'he')
+    );
+    
+    // מיון גם פריטים שנקנו לפי א-ב
+    purchasedItems.sort((a, b) => 
         a.name.localeCompare(b.name, 'he')
     );
     
@@ -457,7 +462,7 @@ function createShoppingModeItem(item, isPurchased) {
     const quantityInput = document.createElement('input');
     quantityInput.type = 'text';
     quantityInput.className = 'shopping-mode-quantity-input';
-    quantityInput.value = item.quantity || '';
+    quantityInput.value = item.quantity || '1';
     quantityInput.placeholder = 'כמות';
     quantityInput.addEventListener('blur', () => {
         updateItemQuantity(item.id, quantityInput.value.trim());
@@ -505,7 +510,7 @@ async function handleAddItem(e) {
     const newItem = {
         id: Date.now().toString(),
         name: itemName,
-        quantity: itemQuantity || null,
+        quantity: itemQuantity || '1',
         category: itemCategory || null,
         purchased: false,
         favorite: false,
@@ -515,7 +520,7 @@ async function handleAddItem(e) {
     const existingFavorite = favorites.find(f => normalizeText(f.name) === normalizeText(itemName));
     if (existingFavorite) {
         newItem.favorite = true;
-        newItem.quantity = newItem.quantity || existingFavorite.quantity;
+        newItem.quantity = newItem.quantity || existingFavorite.quantity || '1';
         newItem.category = newItem.category || existingFavorite.category;
     }
     
@@ -550,7 +555,7 @@ async function togglePurchased(itemId) {
 async function updateItemQuantity(itemId, newQuantity) {
     const item = shoppingList.find(i => i.id === itemId);
     if (item) {
-        item.quantity = newQuantity || null;
+        item.quantity = newQuantity || '1';
         saveToLocalStorage();
         if (isShoppingMode) {
             renderShoppingMode();
@@ -854,7 +859,7 @@ async function addFavoriteToList(favoriteId) {
     const newItem = {
         id: Date.now().toString(),
         name: favorite.name,
-        quantity: favorite.quantity,
+        quantity: favorite.quantity || '1',
         category: favorite.category,
         purchased: false,
         favorite: true,
@@ -1178,7 +1183,7 @@ function renderList() {
         }
     });
     
-    // מיון פריטים בכל קטגוריה (לא נקנו קודם)
+    // מיון פריטים בכל קטגוריה לפי א-ב (אלפבית עברי)
     Object.keys(itemsByCategory).forEach(category => {
         itemsByCategory[category].sort((a, b) => {
             if (a.purchased !== b.purchased) {
@@ -1188,11 +1193,12 @@ function renderList() {
         });
     });
     
+    // מיון פריטים ללא קטגוריה לפי א-ב
     itemsWithoutCategory.sort((a, b) => {
         if (a.purchased !== b.purchased) {
             return a.purchased ? 1 : -1;
         }
-        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        return a.name.localeCompare(b.name, 'he');
     });
     
     // הצג לפי סדר הקטגוריות המוגדרות
@@ -1336,7 +1342,7 @@ function renderFavorites() {
         favoritesByCategory[category].push(favorite);
     });
     
-    // מיון פריטים בכל קטגוריה
+    // מיון פריטים בכל קטגוריה לפי א-ב (אלפבית עברי)
     Object.keys(favoritesByCategory).forEach(category => {
         favoritesByCategory[category].sort((a, b) => 
             a.name.localeCompare(b.name, 'he')
