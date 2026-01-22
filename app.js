@@ -84,6 +84,16 @@ function setupEventListeners() {
     exitShoppingModeBtn.addEventListener('click', exitShoppingMode);
     shareListBtn.addEventListener('click', showSharingSection);
     
+    // כפתור רענון
+    const refreshButton = document.getElementById('refreshButton');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', () => {
+            if (confirm('האם אתה בטוח שברצונך לרענן את הדף? כל השינויים שלא נשמרו יאבדו.')) {
+                window.location.reload();
+            }
+        });
+    }
+    
     // כפתור שמירה
     const saveListBtn = document.getElementById('saveListBtn');
     if (saveListBtn) {
