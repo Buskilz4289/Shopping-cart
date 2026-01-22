@@ -15,6 +15,51 @@ let touchStartX = 0;
 let touchStartY = 0;
 let longPressTimer = null;
 
+// רשימת קטגוריות
+const CATEGORIES = [
+    'מוצרי חלב',
+    'מוצרי יסוד',
+    'פירות וירקות',
+    'בשר | עופות | דגים',
+    'חטיפים וממתקים',
+    'משקאות',
+    'קפואים',
+    'תבלינים ואפייה',
+    'מוצרי ניקיון וחד פעמי',
+    'שונות'
+];
+
+// מוצרים קבועים מוגדרים מראש (מוצגים לכולם)
+const DEFAULT_FAVORITES = [
+    { name: 'חלב', category: 'מוצרי חלב', quantity: '1 ליטר' },
+    { name: 'ביצים', category: 'מוצרי חלב', quantity: '12' },
+    { name: 'גבינה צהובה', category: 'מוצרי חלב', quantity: '200 גרם' },
+    { name: 'יוגורט', category: 'מוצרי חלב', quantity: '4 יחידות' },
+    { name: 'לחם', category: 'מוצרי יסוד', quantity: '1 כיכר' },
+    { name: 'פסטה', category: 'מוצרי יסוד', quantity: '500 גרם' },
+    { name: 'אורז', category: 'מוצרי יסוד', quantity: '1 ק"ג' },
+    { name: 'שמן', category: 'מוצרי יסוד', quantity: '1 בקבוק' },
+    { name: 'עגבניות', category: 'פירות וירקות', quantity: '1 ק"ג' },
+    { name: 'מלפפונים', category: 'פירות וירקות', quantity: '1 ק"ג' },
+    { name: 'בננות', category: 'פירות וירקות', quantity: '1 ק"ג' },
+    { name: 'תפוחים', category: 'פירות וירקות', quantity: '1 ק"ג' },
+    { name: 'עוף', category: 'בשר | עופות | דגים', quantity: '1 ק"ג' },
+    { name: 'בשר טחון', category: 'בשר | עופות | דגים', quantity: '500 גרם' },
+    { name: 'דג סלמון', category: 'בשר | עופות | דגים', quantity: '500 גרם' },
+    { name: 'מים', category: 'משקאות', quantity: '6 בקבוקים' },
+    { name: 'מיץ', category: 'משקאות', quantity: '1 ליטר' },
+    { name: 'קפה', category: 'משקאות', quantity: '250 גרם' },
+    { name: 'גלידה', category: 'קפואים', quantity: '1 ליטר' },
+    { name: 'ירקות קפואים', category: 'קפואים', quantity: '500 גרם' },
+    { name: 'מלח', category: 'תבלינים ואפייה', quantity: '1 יחידה' },
+    { name: 'פלפל שחור', category: 'תבלינים ואפייה', quantity: '1 יחידה' },
+    { name: 'סוכר', category: 'תבלינים ואפייה', quantity: '1 ק"ג' },
+    { name: 'קמח', category: 'תבלינים ואפייה', quantity: '1 ק"ג' },
+    { name: 'נייר טואלט', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 חבילה' },
+    { name: 'סבון כלים', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 יחידה' },
+    { name: 'מגבונים', category: 'מוצרי ניקיון וחד פעמי', quantity: '1 חבילה' }
+];
+
 // אלמנטי DOM
 const addItemForm = document.getElementById('addItemForm');
 const itemNameInput = document.getElementById('itemName');
@@ -61,6 +106,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateSmartSummary();
     }
     
+    // וודא שמוצרים קבועים מוגדרים מראש נטענו
+    loadFavorites();
+    
     setupEventListeners();
     loadTheme();
     checkAndSaveHistory();
@@ -73,6 +121,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         FirebaseManager.syncOfflineQueue();
     }
 });
+
+// טעינת מוצרים קבועים - שילוב של מוצרים מוגדרים מראש ומוצרים שנשמרו
+function loadFavorites() {
+    // טען מוצרים שנשמרו ב-localStorage
+    const savedFavorites = localStorage.getItem('favorites');
+    if (savedFavorites) {
+        try {
+            const parsed = JSON.parse(savedFavorites);
+            favorites = parsed.filter(f => f && f.name);
+        } catch (e) {
+            favorites = [];
+        }
+    }
+    
+    // הוסף מוצרים מוגדרים מראש שלא קיימים כבר
+    DEFAULT_FAVORITES.forEach(defaultFav => {
+        const exists = favorites.some(f => 
+            normalizeText(f.name) === normalizeText(defaultFav.name)
+        );
+        if (!exists) {
+            favorites.push({
+                id: `default-${Date.now()}-${Math.random()}`,
+                name: defaultFav.name,
+                category: defaultFav.category,
+                quantity: defaultFav.quantity,
+                isDefault: true
+            });
+        }
+    });
+    
+    // שמור את הרשימה המעודכנת
+    saveFavoritesToLocalStorage();
+}
 
 // הגדרת מאזיני אירועים
 function setupEventListeners() {
@@ -463,7 +544,8 @@ async function toggleFavorite(itemId) {
                 id: item.id,
                 name: item.name,
                 quantity: item.quantity,
-                category: item.category,
+                category: item.category || 'שונות',
+                isDefault: false,
                 addedAt: new Date().toISOString()
             };
             
@@ -471,10 +553,12 @@ async function toggleFavorite(itemId) {
                 favorites.push(favoriteItem);
             }
         } else {
-            favorites = favorites.filter(f => f.id !== itemId);
+            // הסר ממועדפים (רק אם לא מוגדר מראש)
+            favorites = favorites.filter(f => f.id !== itemId || f.isDefault);
         }
         
         saveToLocalStorage();
+        saveFavoritesToLocalStorage();
         renderList();
         renderFavorites();
         await syncSharedList();
@@ -760,6 +844,15 @@ async function addFavoriteToList(favoriteId) {
 
 // מחיקת מועדף
 async function deleteFavorite(favoriteId) {
+    const favorite = favorites.find(f => f.id === favoriteId);
+    if (!favorite) return;
+    
+    // אם זה מוצר מוגדר מראש, לא ניתן למחוק אותו
+    if (favorite.isDefault) {
+        alert('לא ניתן למחוק מוצר מוגדר מראש');
+        return;
+    }
+    
     if (confirm('האם אתה בטוח שברצונך להסיר פריט זה מהמועדפים?')) {
         favorites = favorites.filter(f => f.id !== favoriteId);
         
@@ -769,10 +862,12 @@ async function deleteFavorite(favoriteId) {
             }
         });
         
+        saveFavoritesToLocalStorage();
         saveToLocalStorage();
         renderFavorites();
         renderList();
         await syncSharedList();
+        hapticFeedback();
     }
 }
 
@@ -976,6 +1071,12 @@ function selectAutocompleteSuggestion(suggestion) {
     if (suggestion.quantity) {
         document.getElementById('itemQuantity').value = suggestion.quantity;
     }
+    if (suggestion.category) {
+        const categorySelect = document.getElementById('itemCategory');
+        if (categorySelect) {
+            categorySelect.value = suggestion.category;
+        }
+    }
     autocompleteDropdown.classList.remove('show');
     itemNameInput.focus();
     hapticFeedback();
@@ -983,26 +1084,85 @@ function selectAutocompleteSuggestion(suggestion) {
 
 // רינדור רשימת הקניות
 function renderList() {
-    const sortedList = [...shoppingList].sort((a, b) => {
+    shoppingListContainer.innerHTML = '';
+    
+    if (shoppingList.length === 0) {
+        emptyState.style.display = 'block';
+        clearPurchasedBtn.style.display = 'none';
+        return;
+    }
+    
+    emptyState.style.display = 'none';
+    
+    // הפרד לפי קטגוריות
+    const itemsByCategory = {};
+    const itemsWithoutCategory = [];
+    
+    shoppingList.forEach(item => {
+        if (item.category && item.category.trim()) {
+            if (!itemsByCategory[item.category]) {
+                itemsByCategory[item.category] = [];
+            }
+            itemsByCategory[item.category].push(item);
+        } else {
+            itemsWithoutCategory.push(item);
+        }
+    });
+    
+    // מיון פריטים בכל קטגוריה (לא נקנו קודם)
+    Object.keys(itemsByCategory).forEach(category => {
+        itemsByCategory[category].sort((a, b) => {
+            if (a.purchased !== b.purchased) {
+                return a.purchased ? 1 : -1;
+            }
+            return a.name.localeCompare(b.name, 'he');
+        });
+    });
+    
+    itemsWithoutCategory.sort((a, b) => {
         if (a.purchased !== b.purchased) {
             return a.purchased ? 1 : -1;
         }
-        return new Date(b.createdAt) - new Date(a.createdAt);
+        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
     
-    shoppingListContainer.innerHTML = '';
+    // הצג לפי סדר הקטגוריות המוגדרות
+    CATEGORIES.forEach(category => {
+        if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header';
+            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            shoppingListContainer.appendChild(categoryHeader);
+            
+            itemsByCategory[category].forEach(item => {
+                const listItem = createListItem(item);
+                shoppingListContainer.appendChild(listItem);
+            });
+        }
+    });
     
-    if (sortedList.length === 0) {
-        emptyState.style.display = 'block';
-        clearPurchasedBtn.style.display = 'none';
-    } else {
-        emptyState.style.display = 'none';
+    // הצג קטגוריות אחרות שלא מוגדרות
+    Object.keys(itemsByCategory).forEach(category => {
+        if (!CATEGORIES.includes(category)) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header';
+            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            shoppingListContainer.appendChild(categoryHeader);
+            
+            itemsByCategory[category].forEach(item => {
+                const listItem = createListItem(item);
+                shoppingListContainer.appendChild(listItem);
+            });
+        }
+    });
+    
+    // הצג פריטים ללא קטגוריה
+    if (itemsWithoutCategory.length > 0) {
+        itemsWithoutCategory.forEach(item => {
+            const listItem = createListItem(item);
+            shoppingListContainer.appendChild(listItem);
+        });
     }
-    
-    sortedList.forEach(item => {
-        const listItem = createListItem(item);
-        shoppingListContainer.appendChild(listItem);
-    });
 }
 
 // יצירת אלמנט פריט ברשימה
@@ -1078,14 +1238,58 @@ function renderFavorites() {
     
     if (favorites.length === 0) {
         favoritesEmptyState.style.display = 'block';
-    } else {
-        favoritesEmptyState.style.display = 'none';
-        
-        favorites.forEach(favorite => {
-            const favoriteItem = createFavoriteItem(favorite);
-            favoritesListContainer.appendChild(favoriteItem);
-        });
+        return;
     }
+    
+    favoritesEmptyState.style.display = 'none';
+    
+    // הפרד לפי קטגוריות
+    const favoritesByCategory = {};
+    
+    favorites.forEach(favorite => {
+        const category = favorite.category || 'שונות';
+        if (!favoritesByCategory[category]) {
+            favoritesByCategory[category] = [];
+        }
+        favoritesByCategory[category].push(favorite);
+    });
+    
+    // מיון פריטים בכל קטגוריה
+    Object.keys(favoritesByCategory).forEach(category => {
+        favoritesByCategory[category].sort((a, b) => 
+            a.name.localeCompare(b.name, 'he')
+        );
+    });
+    
+    // הצג לפי סדר הקטגוריות המוגדרות
+    CATEGORIES.forEach(category => {
+        if (favoritesByCategory[category] && favoritesByCategory[category].length > 0) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header';
+            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            favoritesListContainer.appendChild(categoryHeader);
+            
+            favoritesByCategory[category].forEach(favorite => {
+                const favoriteItem = createFavoriteItem(favorite);
+                favoritesListContainer.appendChild(favoriteItem);
+            });
+        }
+    });
+    
+    // הצג קטגוריות אחרות שלא מוגדרות
+    Object.keys(favoritesByCategory).forEach(category => {
+        if (!CATEGORIES.includes(category)) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header';
+            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            favoritesListContainer.appendChild(categoryHeader);
+            
+            favoritesByCategory[category].forEach(favorite => {
+                const favoriteItem = createFavoriteItem(favorite);
+                favoritesListContainer.appendChild(favoriteItem);
+            });
+        }
+    });
 }
 
 // יצירת אלמנט מועדף
@@ -1694,13 +1898,8 @@ function loadFromLocalStorage() {
             );
         }
         
-        const savedFavorites = localStorage.getItem('favorites');
-        if (savedFavorites) {
-            favorites = JSON.parse(savedFavorites);
-            favorites = favorites.filter(item => 
-                item && item.id && item.name
-            );
-        }
+        // טען מועדפים (כולל מוצרים מוגדרים מראש)
+        loadFavorites();
         
         const savedHistory = localStorage.getItem('shoppingHistory');
         if (savedHistory) {
@@ -1719,6 +1918,17 @@ function loadFromLocalStorage() {
         favorites = [];
         shoppingHistory = [];
         recurringItems = [];
+    }
+}
+
+// שמירת מועדפים ל-localStorage (רק מועדפים שהוספו על ידי המשתמש)
+function saveFavoritesToLocalStorage() {
+    try {
+        // שמור רק מועדפים שהוספו על ידי המשתמש (לא מוגדרים מראש)
+        const userFavorites = favorites.filter(f => !f.isDefault);
+        localStorage.setItem('favorites', JSON.stringify(userFavorites));
+    } catch (error) {
+        console.error('שגיאה בשמירת מועדפים:', error);
     }
 }
 

@@ -835,9 +835,51 @@ main {
     text-align: center;
 }
 
-.item-category-input {
-    width: 120px;
+.item-category-select {
+    width: 140px;
     flex-shrink: 0;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: inherit;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    text-align: right;
+    direction: rtl;
+    cursor: pointer;
+}
+
+.item-category-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+.item-category-select option {
+    text-align: right;
+    direction: rtl;
+}
+
+/* כותרת קטגוריה */
+.category-header {
+    list-style: none;
+    margin: 1.5rem 0 0.75rem 0;
+    padding: 0.5rem 0;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.category-header:first-child {
+    margin-top: 0;
+}
+
+.category-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    margin: 0;
+    padding: 0;
 }
 
 .btn-add-item {
@@ -1259,10 +1301,10 @@ input[type="text"]:focus {
         text-align: center;
     }
     
-    .item-category-input {
-        width: 100px;
+    .item-category-select {
+        width: 110px;
         font-size: 0.9rem;
-        padding: 0.75rem 0.5rem;
+        padding: 0.6rem 0.5rem;
     }
     
     .btn-add-item {

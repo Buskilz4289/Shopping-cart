@@ -95,14 +95,24 @@
                                 autocomplete="off"
                                 class="item-quantity-input"
                             >
-                            <input 
-                                type="text" 
+                            <select 
                                 id="itemCategory" 
                                 name="itemCategory" 
-                                placeholder="קטגוריה"
-                                autocomplete="off"
-                                class="item-category-input"
+                                class="item-category-select"
+                                title="בחר קטגוריה"
                             >
+                                <option value="">קטגוריה</option>
+                                <option value="מוצרי חלב">מוצרי חלב</option>
+                                <option value="מוצרי יסוד">מוצרי יסוד</option>
+                                <option value="פירות וירקות">פירות וירקות</option>
+                                <option value="בשר | עופות | דגים">בשר | עופות | דגים</option>
+                                <option value="חטיפים וממתקים">חטיפים וממתקים</option>
+                                <option value="משקאות">משקאות</option>
+                                <option value="קפואים">קפואים</option>
+                                <option value="תבלינים ואפייה">תבלינים ואפייה</option>
+                                <option value="מוצרי ניקיון וחד פעמי">מוצרי ניקיון וחד פעמי</option>
+                                <option value="שונות">שונות</option>
+                            </select>
                             <button type="submit" class="btn-add-item" aria-label="הוסף פריט">
                                 ✓
                             </button>
