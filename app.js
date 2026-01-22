@@ -162,6 +162,18 @@ function setupEventListeners() {
         saveListBtn.addEventListener('click', handleSaveList);
     }
     
+    // כפתור רשימה חדשה
+    const newListBtn = document.getElementById('newListBtn');
+    if (newListBtn) {
+        newListBtn.addEventListener('click', handleNewList);
+    }
+    
+    // כפתור ייצוא רשימה
+    const exportListBtn = document.getElementById('exportListBtn');
+    if (exportListBtn) {
+        exportListBtn.addEventListener('click', handleExportList);
+    }
+    
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
@@ -1916,6 +1928,219 @@ function handleSaveList() {
     const btn = document.getElementById('saveListBtn');
     const originalText = btn.textContent;
     btn.textContent = '✓ נשמר!';
+    btn.style.backgroundColor = 'var(--success-color)';
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.backgroundColor = '';
+    }, 2000);
+    
+    hapticFeedback();
+}
+
+// יצירת רשימה חדשה
+async function handleNewList() {
+    // אם יש פריטים ברשימה, שמור אותם להיסטוריה
+    if (shoppingList.length > 0) {
+        const confirmMessage = `האם אתה בטוח שברצונך ליצור רשימה חדשה?\nהרשימה הנוכחית תישמר בהיסטוריה.`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        // שמור את הרשימה הנוכחית להיסטוריה
+        saveCurrentListToHistory();
+    }
+    
+    // הפסק שיתוף אם יש
+    if (sharedListId) {
+        if (FirebaseManager) {
+            FirebaseManager.unsubscribeFromList();
+        }
+        sharedListId = null;
+        localStorage.removeItem('sharedListId');
+        
+        // עדכון ה-URL להסרת ה-hash
+        if (window.history && window.history.replaceState) {
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+        }
+        
+        // הסתר את אזור השיתוף
+        hideSharingSection();
+    }
+    
+    // נקה את הרשימה
+    shoppingList = [];
+    saveToLocalStorage();
+    
+    // עדכן את התצוגה
+    renderList();
+    updateSmartSummary();
+    switchTab('current');
+    
+    // הודעה למשתמש
+    const btn = document.getElementById('newListBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '✓ נוצרה!';
+    btn.style.backgroundColor = 'var(--success-color)';
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.backgroundColor = '';
+    }, 2000);
+    
+    hapticFeedback();
+}
+
+// ייצוא רשימת קניות
+function handleExportList() {
+    if (shoppingList.length === 0) {
+        alert('הרשימה ריקה - אין מה לייצא');
+        return;
+    }
+    
+    // יצירת תאריך לקבצים
+    const date = new Date();
+    const dateStr = date.toLocaleDateString('he-IL', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit' 
+    }).replace(/\//g, '-');
+    
+    // יצירת תפריט ייצוא
+    const exportType = prompt(
+        'בחר סוג ייצוא:\n' +
+        '1 - ייצוא כטקסט (קריא)\n' +
+        '2 - ייצוא כ-JSON\n' +
+        '3 - ייצוא כ-CSV\n' +
+        'הקלד 1, 2 או 3:'
+    );
+    
+    if (!exportType) return;
+    
+    let content = '';
+    let filename = '';
+    let mimeType = '';
+    
+    switch(exportType.trim()) {
+        case '1':
+            // ייצוא כטקסט קריא
+            content = 'רשימת קניות - ' + dateStr + '\n';
+            content += '='.repeat(30) + '\n\n';
+            
+            // הפרד לפי קטגוריות
+            const itemsByCategory = {};
+            const itemsWithoutCategory = [];
+            
+            shoppingList.forEach(item => {
+                if (item.category && item.category.trim()) {
+                    if (!itemsByCategory[item.category]) {
+                        itemsByCategory[item.category] = [];
+                    }
+                    itemsByCategory[item.category].push(item);
+                } else {
+                    itemsWithoutCategory.push(item);
+                }
+            });
+            
+            // הצג לפי קטגוריות
+            CATEGORIES.forEach(category => {
+                if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
+                    content += `\n${category}:\n`;
+                    itemsByCategory[category].forEach(item => {
+                        const status = item.purchased ? '✓' : '☐';
+                        const quantity = item.quantity ? ` (${item.quantity})` : '';
+                        content += `  ${status} ${item.name}${quantity}\n`;
+                    });
+                }
+            });
+            
+            // קטגוריות אחרות
+            Object.keys(itemsByCategory).forEach(category => {
+                if (!CATEGORIES.includes(category)) {
+                    content += `\n${category}:\n`;
+                    itemsByCategory[category].forEach(item => {
+                        const status = item.purchased ? '✓' : '☐';
+                        const quantity = item.quantity ? ` (${item.quantity})` : '';
+                        content += `  ${status} ${item.name}${quantity}\n`;
+                    });
+                }
+            });
+            
+            // פריטים ללא קטגוריה
+            if (itemsWithoutCategory.length > 0) {
+                content += '\nשונות:\n';
+                itemsWithoutCategory.forEach(item => {
+                    const status = item.purchased ? '✓' : '☐';
+                    const quantity = item.quantity ? ` (${item.quantity})` : '';
+                    content += `  ${status} ${item.name}${quantity}\n`;
+                });
+            }
+            
+            content += '\n' + '='.repeat(30) + '\n';
+            const purchased = shoppingList.filter(item => item.purchased).length;
+            const total = shoppingList.length;
+            content += `סה"כ: ${total} פריטים | נקנו: ${purchased} | נותרו: ${total - purchased}\n`;
+            
+            filename = `רשימת-קניות-${dateStr}.txt`;
+            mimeType = 'text/plain;charset=utf-8';
+            break;
+            
+        case '2':
+            // ייצוא כ-JSON
+            const exportData = {
+                date: date.toISOString(),
+                totalItems: shoppingList.length,
+                purchasedItems: shoppingList.filter(item => item.purchased).length,
+                items: shoppingList.map(item => ({
+                    name: item.name,
+                    quantity: item.quantity || null,
+                    category: item.category || null,
+                    purchased: item.purchased,
+                    favorite: item.favorite || false,
+                    createdAt: item.createdAt || null
+                }))
+            };
+            content = JSON.stringify(exportData, null, 2);
+            filename = `רשימת-קניות-${dateStr}.json`;
+            mimeType = 'application/json;charset=utf-8';
+            break;
+            
+        case '3':
+            // ייצוא כ-CSV
+            content = 'שם,כמות,קטגוריה,נקנה,מועדף\n';
+            shoppingList.forEach(item => {
+                const name = `"${item.name}"`;
+                const quantity = item.quantity ? `"${item.quantity}"` : '';
+                const category = item.category ? `"${item.category}"` : '';
+                const purchased = item.purchased ? 'כן' : 'לא';
+                const favorite = item.favorite ? 'כן' : 'לא';
+                content += `${name},${quantity},${category},${purchased},${favorite}\n`;
+            });
+            filename = `רשימת-קניות-${dateStr}.csv`;
+            mimeType = 'text/csv;charset=utf-8';
+            break;
+            
+        default:
+            alert('אפשרות לא תקינה');
+            return;
+    }
+    
+    // הורדת הקובץ
+    const blob = new Blob(['\ufeff' + content], { type: mimeType }); // \ufeff = BOM ל-UTF-8
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    // הודעה למשתמש
+    const btn = document.getElementById('exportListBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '✓ יוצא!';
     btn.style.backgroundColor = 'var(--success-color)';
     
     setTimeout(() => {
