@@ -120,12 +120,16 @@ function setupEventListeners() {
 
 // החלפת טאב
 function switchTab(tabName) {
-    if (isShoppingMode && tabName !== 'shoppingMode') {
-        exitShoppingMode();
+    // אם במצב קנייה, אל תאפשר החלפת טאבים
+    if (isShoppingMode) {
+        return;
     }
     
     tabButtons.forEach(btn => btn.classList.remove('active'));
-    tabContents.forEach(content => content.classList.remove('active'));
+    tabContents.forEach(content => {
+        content.classList.remove('active');
+        content.style.display = 'none';
+    });
     
     const selectedBtn = document.querySelector(`[data-tab="${tabName}"]`);
     const selectedContent = document.getElementById(`${tabName}Tab`);
@@ -133,6 +137,7 @@ function switchTab(tabName) {
     if (selectedBtn && selectedContent) {
         selectedBtn.classList.add('active');
         selectedContent.classList.add('active');
+        selectedContent.style.display = 'block';
     }
 }
 
@@ -152,21 +157,50 @@ function enterShoppingMode() {
     shoppingModeToggle.classList.add('active');
     
     // הסתר אלמנטים לא רלוונטיים
-    document.getElementById('smartSummary').style.display = 'none';
-    document.getElementById('recurringSuggestions').style.display = 'none';
-    document.getElementById('addItemForm').closest('.add-item-section').style.display = 'none';
-    document.querySelector('.tabs-nav').style.display = 'none';
-    document.getElementById('currentTab').style.display = 'none';
-    document.getElementById('favoritesTab').style.display = 'none';
-    document.getElementById('historyTab').style.display = 'none';
-    document.getElementById('sharingSection').style.display = 'none';
+    const smartSummary = document.getElementById('smartSummary');
+    const recurringSuggestions = document.getElementById('recurringSuggestions');
+    const addItemSection = document.getElementById('addItemForm')?.closest('.add-item-section');
+    const tabsNav = document.querySelector('.tabs-nav');
+    const currentTab = document.getElementById('currentTab');
+    const favoritesTab = document.getElementById('favoritesTab');
+    const historyTab = document.getElementById('historyTab');
+    const sharingSection = document.getElementById('sharingSection');
     
+    if (smartSummary) smartSummary.style.display = 'none';
+    if (recurringSuggestions) recurringSuggestions.style.display = 'none';
+    if (addItemSection) addItemSection.style.display = 'none';
+    if (tabsNav) tabsNav.style.display = 'none';
+    if (currentTab) {
+        currentTab.classList.remove('active');
+        currentTab.style.display = 'none';
+    }
+    if (favoritesTab) {
+        favoritesTab.classList.remove('active');
+        favoritesTab.style.display = 'none';
+    }
+    if (historyTab) {
+        historyTab.classList.remove('active');
+        historyTab.style.display = 'none';
+    }
+    if (sharingSection) sharingSection.style.display = 'none';
+    
+    // הצג את מצב הקנייה
     const shoppingModeTab = document.getElementById('shoppingModeTab');
     if (shoppingModeTab) {
         shoppingModeTab.classList.add('active');
         shoppingModeTab.style.display = 'block';
+        shoppingModeTab.style.visibility = 'visible';
+        shoppingModeTab.style.opacity = '1';
+        shoppingModeTab.style.position = 'relative';
+        shoppingModeTab.style.zIndex = '1';
     }
-    renderShoppingMode();
+    
+    // המתן קצת לפני רינדור כדי לוודא שהאלמנטים מוסתרים
+    setTimeout(() => {
+        renderShoppingMode();
+        // גלול למעלה כדי לראות את הרשימה
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 50);
 }
 
 function exitShoppingMode() {
