@@ -84,6 +84,12 @@ function setupEventListeners() {
     exitShoppingModeBtn.addEventListener('click', exitShoppingMode);
     shareListBtn.addEventListener('click', showSharingSection);
     
+    // כפתור שמירה
+    const saveListBtn = document.getElementById('saveListBtn');
+    if (saveListBtn) {
+        saveListBtn.addEventListener('click', handleSaveList);
+    }
+    
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
@@ -211,7 +217,6 @@ async function handleAddItem(e) {
     const formData = new FormData(e.target);
     const itemName = formData.get('itemName').trim();
     const itemQuantity = formData.get('itemQuantity').trim();
-    const itemCategory = formData.get('itemCategory').trim();
     
     if (!itemName) {
         return;
@@ -233,7 +238,7 @@ async function handleAddItem(e) {
         id: Date.now().toString(),
         name: itemName,
         quantity: itemQuantity || null,
-        category: itemCategory || null,
+        category: null, // הסרנו קטגוריה
         purchased: false,
         favorite: false,
         createdAt: new Date().toISOString()
@@ -243,7 +248,6 @@ async function handleAddItem(e) {
     if (existingFavorite) {
         newItem.favorite = true;
         newItem.quantity = newItem.quantity || existingFavorite.quantity;
-        newItem.category = newItem.category || existingFavorite.category;
     }
     
     shoppingList.push(newItem);
@@ -748,8 +752,8 @@ function renderAutocomplete(suggestions) {
             <span class="autocomplete-item-icon">${suggestion.icon}</span>
             <div class="autocomplete-item-text">
                 <div class="autocomplete-item-name">${suggestion.name}</div>
-                ${suggestion.quantity || suggestion.category ? 
-                    `<div class="autocomplete-item-details">${[suggestion.quantity, suggestion.category].filter(Boolean).join(' • ')}</div>` 
+                ${suggestion.quantity ? 
+                    `<div class="autocomplete-item-details">${suggestion.quantity}</div>` 
                     : ''}
             </div>
         `;
@@ -796,9 +800,6 @@ function selectAutocompleteSuggestion(suggestion) {
     itemNameInput.value = suggestion.name;
     if (suggestion.quantity) {
         document.getElementById('itemQuantity').value = suggestion.quantity;
-    }
-    if (suggestion.category) {
-        document.getElementById('itemCategory').value = suggestion.category;
     }
     autocompleteDropdown.classList.remove('show');
     itemNameInput.focus();
@@ -1565,5 +1566,34 @@ function loadTheme() {
     
     const icon = darkModeToggle.querySelector('.toggle-icon');
     icon.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+}
+
+// שמירת רשימה
+function handleSaveList() {
+    if (shoppingList.length === 0) {
+        alert('הרשימה ריקה - אין מה לשמור');
+        return;
+    }
+    
+    // שמירה ל-localStorage (כבר נעשה אוטומטית, אבל נוסיף הודעה)
+    saveToLocalStorage();
+    
+    // אם יש רשימה משותפת, נסנכרן גם ל-Firebase
+    if (sharedListId) {
+        syncSharedList();
+    }
+    
+    // הודעה למשתמש
+    const btn = document.getElementById('saveListBtn');
+    const originalText = btn.textContent;
+    btn.textContent = '✓ נשמר!';
+    btn.style.backgroundColor = 'var(--success-color)';
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.backgroundColor = '';
+    }, 2000);
+    
+    hapticFeedback();
 }
 
