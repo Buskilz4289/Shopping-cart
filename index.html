@@ -164,7 +164,33 @@
                     <span id="shoppingModeRemaining">0</span> פריטים נותרו
                 </div>
                 <ul id="shoppingModeList" class="shopping-mode-list"></ul>
+                <div class="shopping-mode-footer" style="display: none;">
+                    <button id="finishShoppingBtn" class="btn btn-primary btn-large">✓ סיום קנייה</button>
+                </div>
             </section>
+            
+            <!-- Shopping Summary Modal -->
+            <div id="shoppingSummaryModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>📋 סיכום קנייה</h2>
+                        <button id="closeSummaryModal" class="btn-icon-small">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="summary-section">
+                            <h3>✅ נקנו (<span id="summaryPurchasedCount">0</span>)</h3>
+                            <ul id="summaryPurchasedList" class="summary-list"></ul>
+                        </div>
+                        <div class="summary-section">
+                            <h3>❌ לא נקנו (<span id="summaryNotPurchasedCount">0</span>)</h3>
+                            <ul id="summaryNotPurchasedList" class="summary-list"></ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="closeSummaryBtn" class="btn btn-primary">סגור</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Favorites Section -->
             <section id="favoritesTab" class="tab-content">
