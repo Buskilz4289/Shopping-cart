@@ -24,7 +24,9 @@ const CATEGORIES = [
     'חטיפים וממתקים',
     'משקאות',
     'קפואים',
-    'תבלינים ואפייה',
+    'תבלינים',
+    'אפייה',
+    'פיצוחים ופירות יבשים',
     'מוצרי ניקיון וחד פעמי',
     'שונות'
 ];
@@ -323,7 +325,7 @@ function exitShoppingMode() {
 }
 
 function renderShoppingMode() {
-    // הפרד בין פריטים שלא נקנו לפריטים שנקנו
+    // הפרד בין פריטים שלא נקנו לפריטים שנקנו, ומיון לפי קטגוריות
     const unpurchasedItems = shoppingList.filter(item => !item.purchased);
     const purchasedItems = shoppingList.filter(item => item.purchased);
     
@@ -341,84 +343,70 @@ function renderShoppingMode() {
         return;
     }
     
-    // הצג תחילה את הפריטים שלא נקנו
+    // מיון לפי קטגוריות
+    const unpurchasedByCategory = {};
+    const unpurchasedWithoutCategory = [];
+    
     unpurchasedItems.forEach(item => {
-        const li = document.createElement('li');
-        li.className = 'shopping-mode-item';
-        li.dataset.itemId = item.id;
-        
-        // כפתור V - לחץ לסמן כנקנה
-        const statusBtn = document.createElement('button');
-        statusBtn.className = 'shopping-mode-status not-purchased';
-        statusBtn.textContent = '✓';
-        statusBtn.setAttribute('aria-label', 'לחץ לסמן כנקנה');
-        statusBtn.addEventListener('click', () => {
-            togglePurchased(item.id);
-            renderShoppingMode();
-            updateSmartSummary();
-            hapticFeedback();
-        });
-        
-        const content = document.createElement('div');
-        content.className = 'shopping-mode-content';
-        
-        const name = document.createElement('div');
-        name.className = 'shopping-mode-name';
-        name.textContent = item.name;
-        
-        // כמות ליד השם
-        if (item.quantity) {
-            const quantitySpan = document.createElement('span');
-            quantitySpan.className = 'shopping-mode-quantity';
-            quantitySpan.textContent = item.quantity;
-            name.appendChild(quantitySpan);
+        if (item.category && item.category.trim()) {
+            if (!unpurchasedByCategory[item.category]) {
+                unpurchasedByCategory[item.category] = [];
+            }
+            unpurchasedByCategory[item.category].push(item);
+        } else {
+            unpurchasedWithoutCategory.push(item);
         }
-        
-        content.appendChild(name);
-        
-        li.appendChild(statusBtn);
-        li.appendChild(content);
-        shoppingModeList.appendChild(li);
     });
+    
+    // מיון פריטים בכל קטגוריה
+    Object.keys(unpurchasedByCategory).forEach(category => {
+        unpurchasedByCategory[category].sort((a, b) => 
+            a.name.localeCompare(b.name, 'he')
+        );
+    });
+    
+    unpurchasedWithoutCategory.sort((a, b) => 
+        a.name.localeCompare(b.name, 'he')
+    );
+    
+    // הצג תחילה את הפריטים שלא נקנו לפי קטגוריות
+    CATEGORIES.forEach(category => {
+        if (unpurchasedByCategory[category] && unpurchasedByCategory[category].length > 0) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header shopping-mode-category-header';
+            categoryHeader.innerHTML = `<h4>${category}</h4>`;
+            shoppingModeList.appendChild(categoryHeader);
+            
+            unpurchasedByCategory[category].forEach(item => {
+                createShoppingModeItem(item, false);
+            });
+        }
+    });
+    
+    // קטגוריות אחרות
+    Object.keys(unpurchasedByCategory).forEach(category => {
+        if (!CATEGORIES.includes(category)) {
+            const categoryHeader = document.createElement('li');
+            categoryHeader.className = 'category-header shopping-mode-category-header';
+            categoryHeader.innerHTML = `<h4>${category}</h4>`;
+            shoppingModeList.appendChild(categoryHeader);
+            
+            unpurchasedByCategory[category].forEach(item => {
+                createShoppingModeItem(item, false);
+            });
+        }
+    });
+    
+    // פריטים ללא קטגוריה
+    if (unpurchasedWithoutCategory.length > 0) {
+        unpurchasedWithoutCategory.forEach(item => {
+            createShoppingModeItem(item, false);
+        });
+    }
     
     // הצג אחר כך את הפריטים שנקנו (עם קו חוצה) בתחתית
     purchasedItems.forEach(item => {
-        const li = document.createElement('li');
-        li.className = 'shopping-mode-item purchased';
-        li.dataset.itemId = item.id;
-        
-        // כפתור V - לחץ לבטל סימון
-        const statusBtn = document.createElement('button');
-        statusBtn.className = 'shopping-mode-status purchased';
-        statusBtn.textContent = '✓';
-        statusBtn.setAttribute('aria-label', 'נקנה - לחץ לבטל סימון');
-        statusBtn.addEventListener('click', () => {
-            togglePurchased(item.id);
-            renderShoppingMode();
-            updateSmartSummary();
-            hapticFeedback();
-        });
-        
-        const content = document.createElement('div');
-        content.className = 'shopping-mode-content';
-        
-        const name = document.createElement('div');
-        name.className = 'shopping-mode-name purchased-name';
-        name.textContent = item.name;
-        
-        // כמות ליד השם
-        if (item.quantity) {
-            const quantitySpan = document.createElement('span');
-            quantitySpan.className = 'shopping-mode-quantity';
-            quantitySpan.textContent = item.quantity;
-            name.appendChild(quantitySpan);
-        }
-        
-        content.appendChild(name);
-        
-        li.appendChild(statusBtn);
-        li.appendChild(content);
-        shoppingModeList.appendChild(li);
+        createShoppingModeItem(item, true);
     });
     
     // עדכן את כפתור סיום קנייה - הצג אם יש פריטים שנקנו
@@ -427,6 +415,66 @@ function renderShoppingMode() {
     if (footer) {
         footer.style.display = purchasedCount > 0 ? 'block' : 'none';
     }
+}
+
+// יצירת פריט במצב קניות
+function createShoppingModeItem(item, isPurchased) {
+    const li = document.createElement('li');
+    li.className = `shopping-mode-item ${isPurchased ? 'purchased' : ''}`;
+    li.dataset.itemId = item.id;
+    
+    // כפתור V - לחץ לסמן כנקנה/לא נקנה
+    const statusBtn = document.createElement('button');
+    statusBtn.className = `shopping-mode-status ${isPurchased ? 'purchased' : 'not-purchased'}`;
+    statusBtn.textContent = '✓';
+    statusBtn.setAttribute('aria-label', isPurchased ? 'נקנה - לחץ לבטל סימון' : 'לחץ לסמן כנקנה');
+    statusBtn.addEventListener('click', () => {
+        togglePurchased(item.id);
+        renderShoppingMode();
+        updateSmartSummary();
+        hapticFeedback();
+    });
+    
+    const content = document.createElement('div');
+    content.className = 'shopping-mode-content';
+    
+    // קטגוריה
+    if (item.category) {
+        const categorySpan = document.createElement('span');
+        categorySpan.className = 'shopping-mode-category';
+        categorySpan.textContent = item.category;
+        content.appendChild(categorySpan);
+    }
+    
+    const name = document.createElement('div');
+    name.className = `shopping-mode-name ${isPurchased ? 'purchased-name' : ''}`;
+    name.textContent = item.name;
+    
+    // כמות - עריכה
+    const quantityWrapper = document.createElement('div');
+    quantityWrapper.className = 'shopping-mode-quantity-wrapper';
+    
+    const quantityInput = document.createElement('input');
+    quantityInput.type = 'text';
+    quantityInput.className = 'shopping-mode-quantity-input';
+    quantityInput.value = item.quantity || '';
+    quantityInput.placeholder = 'כמות';
+    quantityInput.addEventListener('blur', () => {
+        updateItemQuantity(item.id, quantityInput.value.trim());
+    });
+    quantityInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            quantityInput.blur();
+        }
+    });
+    quantityWrapper.appendChild(quantityInput);
+    
+    content.appendChild(name);
+    content.appendChild(quantityWrapper);
+    
+    li.appendChild(statusBtn);
+    li.appendChild(content);
+    shoppingModeList.appendChild(li);
 }
 
 // הוספת פריט חדש
@@ -493,6 +541,22 @@ async function togglePurchased(itemId) {
         renderList();
         updateSmartSummary();
         checkAndSaveHistory();
+        await syncSharedList();
+        hapticFeedback();
+    }
+}
+
+// עדכון כמות פריט
+async function updateItemQuantity(itemId, newQuantity) {
+    const item = shoppingList.find(i => i.id === itemId);
+    if (item) {
+        item.quantity = newQuantity || null;
+        saveToLocalStorage();
+        if (isShoppingMode) {
+            renderShoppingMode();
+        } else {
+            renderList();
+        }
         await syncSharedList();
         hapticFeedback();
     }
@@ -912,24 +976,30 @@ function handleAutocompleteInput(e) {
 function getAutocompleteSuggestions(query) {
     const normalizedQuery = normalizeText(query);
     const suggestions = [];
+    const seenNames = new Set();
     
     // מועדפים
     favorites.forEach(fav => {
         if (normalizeText(fav.name).includes(normalizedQuery)) {
-            suggestions.push({
-                type: 'favorite',
-                name: fav.name,
-                quantity: fav.quantity,
-                category: fav.category,
-                icon: '⭐'
-            });
+            const normalizedName = normalizeText(fav.name);
+            if (!seenNames.has(normalizedName)) {
+                seenNames.add(normalizedName);
+                suggestions.push({
+                    type: 'favorite',
+                    name: fav.name,
+                    quantity: fav.quantity,
+                    category: fav.category,
+                    icon: '⭐'
+                });
+            }
         }
     });
     
     // מוצרים חוזרים
     recurringItems.forEach(item => {
-        if (normalizeText(item.name).includes(normalizedQuery) &&
-            !suggestions.some(s => normalizeText(s.name) === normalizeText(item.name))) {
+        const normalizedName = normalizeText(item.name);
+        if (normalizeText(item.name).includes(normalizedQuery) && !seenNames.has(normalizedName)) {
+            seenNames.add(normalizedName);
             suggestions.push({
                 type: 'recurring',
                 name: item.name,
@@ -940,20 +1010,60 @@ function getAutocompleteSuggestions(query) {
         }
     });
     
-    // מהיסטוריה
+    // מהיסטוריה - עם זכירת קטגוריות
+    const categoryMap = {}; // מפה של שם מוצר -> קטגוריה הנפוצה ביותר
+    shoppingHistory.slice(0, 20).forEach(entry => {
+        entry.items.forEach(item => {
+            if (item.category) {
+                const normalizedName = normalizeText(item.name);
+                if (!categoryMap[normalizedName]) {
+                    categoryMap[normalizedName] = {};
+                }
+                if (!categoryMap[normalizedName][item.category]) {
+                    categoryMap[normalizedName][item.category] = 0;
+                }
+                categoryMap[normalizedName][item.category]++;
+            }
+        });
+    });
+    
     shoppingHistory.slice(0, 10).forEach(entry => {
         entry.items.forEach(item => {
-            if (normalizeText(item.name).includes(normalizedQuery) &&
-                !suggestions.some(s => normalizeText(s.name) === normalizeText(item.name))) {
+            const normalizedName = normalizeText(item.name);
+            if (normalizeText(item.name).includes(normalizedQuery) && !seenNames.has(normalizedName)) {
+                seenNames.add(normalizedName);
+                // מצא את הקטגוריה הנפוצה ביותר למוצר זה
+                let mostCommonCategory = item.category;
+                if (categoryMap[normalizedName]) {
+                    const categories = categoryMap[normalizedName];
+                    mostCommonCategory = Object.keys(categories).reduce((a, b) => 
+                        categories[a] > categories[b] ? a : b
+                    );
+                }
                 suggestions.push({
                     type: 'history',
                     name: item.name,
                     quantity: item.quantity,
-                    category: item.category,
+                    category: mostCommonCategory,
                     icon: '📚'
                 });
             }
         });
+    });
+    
+    // מרשימת הקניות הנוכחית (אם יש מוצרים שנמחקו)
+    shoppingList.forEach(item => {
+        const normalizedName = normalizeText(item.name);
+        if (normalizeText(item.name).includes(normalizedQuery) && !seenNames.has(normalizedName)) {
+            seenNames.add(normalizedName);
+            suggestions.push({
+                type: 'current',
+                name: item.name,
+                quantity: item.quantity,
+                category: item.category,
+                icon: '📝'
+            });
+        }
     });
     
     return suggestions.slice(0, 5);
@@ -980,9 +1090,10 @@ function renderAutocomplete(suggestions) {
             <span class="autocomplete-item-icon">${suggestion.icon}</span>
             <div class="autocomplete-item-text">
                 <div class="autocomplete-item-name">${suggestion.name}</div>
-                ${suggestion.quantity ? 
-                    `<div class="autocomplete-item-details">${suggestion.quantity}</div>` 
-                    : ''}
+                <div class="autocomplete-item-details">
+                    ${suggestion.quantity ? `<span>${suggestion.quantity}</span>` : ''}
+                    ${suggestion.category ? `<span class="autocomplete-category">${suggestion.category}</span>` : ''}
+                </div>
             </div>
         `;
         
@@ -1146,12 +1257,24 @@ function createListItem(item) {
     const details = document.createElement('div');
     details.className = 'item-details';
     
-    if (item.quantity) {
-        const quantitySpan = document.createElement('span');
-        quantitySpan.className = 'item-detail';
-        quantitySpan.textContent = `כמות: ${item.quantity}`;
-        details.appendChild(quantitySpan);
-    }
+    // כמות - עריכה
+    const quantityWrapper = document.createElement('div');
+    quantityWrapper.className = 'item-quantity-edit-wrapper';
+    
+    const quantityInput = document.createElement('input');
+    quantityInput.type = 'text';
+    quantityInput.className = 'item-quantity-edit-input';
+    quantityInput.value = item.quantity || '';
+    quantityInput.placeholder = 'כמות';
+    quantityInput.addEventListener('blur', () => {
+        updateItemQuantity(item.id, quantityInput.value.trim());
+    });
+    quantityInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            quantityInput.blur();
+        }
+    });
+    quantityWrapper.appendChild(quantityInput);
     
     if (item.category) {
         const categorySpan = document.createElement('span');
@@ -1161,6 +1284,7 @@ function createListItem(item) {
     }
     
     content.appendChild(name);
+    content.appendChild(quantityWrapper);
     if (details.children.length > 0) {
         content.appendChild(details);
     }
