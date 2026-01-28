@@ -5,13 +5,14 @@
 
 const FirebaseManager = {
     database: null,
+    firestore: null,
     currentListRef: null,
     listListener: null,
     isOnline: navigator.onLine,
     offlineQueue: [],
     isSyncing: false,
 
-    // אתחול
+    // אתחול יחיד – Realtime Database + Firestore (אם זמין)
     init() {
         if (!window.firebaseInitialized) {
             console.warn('Firebase לא מוגדר - השיתוף לא יעבוד');
@@ -19,18 +20,109 @@ const FirebaseManager = {
         }
 
         this.database = firebase.database();
-        
+        if (typeof firebase.firestore === 'function') {
+            this.firestore = firebase.firestore();
+        }
+
         // מעקב אחר מצב חיבור
         window.addEventListener('online', () => {
             this.isOnline = true;
             this.syncOfflineQueue();
         });
-        
+
         window.addEventListener('offline', () => {
             this.isOnline = false;
         });
 
         return true;
+    },
+
+    // ---------- מוצרי קבע (Firestore collection: products) ----------
+    // סכמה: name, favorite: false, category: null. אין כפילויות לפי name.
+
+    async loadFixedProducts(callback) {
+        if (!this.firestore) {
+            if (callback) callback([]);
+            return Promise.resolve([]);
+        }
+        try {
+            const snapshot = await this.firestore.collection('products').orderBy('name').get();
+            const products = snapshot.docs.map(doc => {
+                const d = doc.data();
+                return {
+                    id: doc.id,
+                    name: d.name || '',
+                    favorite: d.favorite === true,
+                    category: d.category != null ? d.category : null
+                };
+            }).filter(p => p.name);
+            if (callback) callback(products);
+            return products;
+        } catch (error) {
+            console.error('שגיאה בטעינת מוצרי קבע:', error);
+            if (callback) callback([]);
+            return [];
+        }
+    },
+
+    /** יוצר מוצרי קבע אם אינם קיימים. מחזיר מספר המוצרים שנוספו. */
+    async createFixedProductsIfMissing(productNames) {
+        if (!this.firestore || !Array.isArray(productNames)) return 0;
+        let added = 0;
+        const col = this.firestore.collection('products');
+        for (const name of productNames) {
+            const trimmed = (name && typeof name === 'string') ? name.trim() : '';
+            if (!trimmed) continue;
+            const existing = await col.where('name', '==', trimmed).limit(1).get();
+            if (existing.empty) {
+                await col.add({ name: trimmed, favorite: false, category: null });
+                added++;
+            }
+        }
+        return added;
+    },
+
+    async addFixedProduct(product) {
+        if (!this.firestore) return null;
+        try {
+            const docRef = await this.firestore.collection('products').add({
+                name: product.name || '',
+                favorite: product.favorite === true,
+                category: product.category != null ? product.category : null
+            });
+            return docRef.id;
+        } catch (error) {
+            console.error('שגיאה בהוספת מוצר קבע:', error);
+            return null;
+        }
+    },
+
+    async deleteFixedProduct(productId) {
+        if (!this.firestore) return false;
+        try {
+            await this.firestore.collection('products').doc(productId).delete();
+            return true;
+        } catch (error) {
+            console.error('שגיאה במחיקת מוצר קבע:', error);
+            return false;
+        }
+    },
+
+    /** עדכון מוצר קבע – שם ו/או קטגוריה. */
+    async editFixedProduct(productId, newName, newCategory = null) {
+        if (!this.firestore || !productId) return false;
+        try {
+            const ref = this.firestore.collection('products').doc(productId);
+            const updates = {};
+            if (newName != null && typeof newName === 'string') updates.name = newName.trim();
+            if (newCategory !== undefined) updates.category = newCategory;
+            if (Object.keys(updates).length === 0) return true;
+            await ref.update(updates);
+            return true;
+        } catch (error) {
+            console.error('שגיאה בעריכת מוצר קבע:', error);
+            return false;
+        }
     },
 
     // יצירת רשימה חדשה
@@ -299,12 +391,6 @@ const FirebaseManager = {
     }
 };
 
-// אתחול אוטומטי
-if (window.firebaseInitialized) {
-    document.addEventListener('DOMContentLoaded', () => {
-        FirebaseManager.init();
-    });
-}
-
-// הפוך את FirebaseManager לזמין גלובלית לבדיקות
+// אתחול מתבצע פעם אחת ב-app.js (DOMContentLoaded)
+// הפוך את FirebaseManager לזמין גלובלית
 window.FirebaseManager = FirebaseManager;
