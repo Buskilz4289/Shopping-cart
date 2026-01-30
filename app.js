@@ -177,6 +177,7 @@ function loadFavorites() {
 
 // האזנה לעדכוני מועדפים מ-Firestore בזמן אמת
 let favoritesListener = null;
+let isUpdatingFavorite = false; // דגל למניעת עדכון כפול
 function setupFavoritesListener() {
     if (!FirebaseManager || !FirebaseManager.firestore) {
         return; // אין Firestore - אין האזנה
@@ -193,10 +194,16 @@ function setupFavoritesListener() {
     // האזנה לכל השינויים ב-collection products
     const unsubscribe = FirebaseManager.firestore.collection('products')
         .onSnapshot((snapshot) => {
+            // אם אנחנו בתהליך עדכון מקומי, דלג על עדכון מ-Firestore
+            if (isUpdatingFavorite) {
+                console.log('מדלג על עדכון מ-Firestore - עדכון מקומי בתהליך');
+                return;
+            }
+            
             console.log('עדכון מועדפים מ-Firestore:', snapshot.docs.length, 'מוצרים');
             
-            // עדכן את favorites array
-            favorites = snapshot.docs.map(doc => {
+            // עדכן את favorites array - שמור על מועדפים מקומיים שלא קיימים ב-Firestore
+            const firestoreProducts = snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
                     id: doc.id,
@@ -207,6 +214,17 @@ function setupFavoritesListener() {
                     addedAt: new Date().toISOString()
                 };
             }).filter(p => p.name);
+            
+            // שמור מועדפים מקומיים שלא קיימים ב-Firestore (fallback)
+            const localOnlyFavorites = favorites.filter(f => 
+                f.favorite === true && 
+                !firestoreProducts.some(fp => fp.id === f.id || normalizeText(fp.name) === normalizeText(f.name))
+            );
+            
+            // עדכן את favorites array - שילוב של Firestore + מקומיים
+            favorites = [...firestoreProducts, ...localOnlyFavorites];
+            
+            console.log('מספר מועדפים אחרי עדכון מ-Firestore:', favorites.filter(f => f.favorite === true).length);
             
             // עדכן את הרשימה - סנכרן את favorite status של פריטים ברשימה
             shoppingList.forEach(item => {
@@ -796,96 +814,134 @@ async function updateItemQuantity(itemId, newQuantity) {
 // מועדפים משותפים - עדכון ב-Firestore במקום ליצור מוצר חדש
 async function toggleFavorite(itemId) {
     const item = shoppingList.find(i => i.id === itemId);
-    if (!item) return;
+    if (!item) {
+        console.warn('toggleFavorite: פריט לא נמצא', itemId);
+        return;
+    }
 
     const newFavoriteState = !item.favorite;
+    console.log('toggleFavorite:', item.name, '->', newFavoriteState ? 'מועדף' : 'לא מועדף');
 
-    if (FirebaseManager && FirebaseManager.firestore) {
-        // נחפש אם המוצר כבר קיים ב-Firestore
-        const existingProduct = await FirebaseManager.findProductByName(item.name);
-        
-        if (newFavoriteState) {
-            // סימון כמועדף
-            if (existingProduct) {
-                // המוצר כבר קיים - עדכן רק את favorite
-                await FirebaseManager.updateProductFavorite(existingProduct.id, true);
-                // עדכן את favorites array
-                const favIndex = favorites.findIndex(f => f.id === existingProduct.id);
-                if (favIndex >= 0) {
-                    favorites[favIndex].favorite = true;
+    // סמן שאנחנו בתהליך עדכון כדי למנוע עדכון כפול מההאזנה
+    isUpdatingFavorite = true;
+
+    try {
+        if (FirebaseManager && FirebaseManager.firestore) {
+            // נחפש אם המוצר כבר קיים ב-Firestore
+            const existingProduct = await FirebaseManager.findProductByName(item.name);
+            console.log('existingProduct:', existingProduct ? existingProduct.id : 'לא נמצא');
+            
+            if (newFavoriteState) {
+                // סימון כמועדף
+                if (existingProduct) {
+                    // המוצר כבר קיים - עדכן רק את favorite
+                    console.log('מעדכן מוצר קיים:', existingProduct.id);
+                    const success = await FirebaseManager.updateProductFavorite(existingProduct.id, true);
+                    if (success) {
+                        // עדכן את favorites array
+                        const favIndex = favorites.findIndex(f => f.id === existingProduct.id);
+                        if (favIndex >= 0) {
+                            favorites[favIndex].favorite = true;
+                            console.log('עודכן מועדף קיים ב-array');
+                        } else {
+                            favorites.push({
+                                id: existingProduct.id,
+                                name: existingProduct.name,
+                                favorite: true,
+                                category: existingProduct.category,
+                                quantity: item.quantity || '1',
+                                addedAt: new Date().toISOString()
+                            });
+                            console.log('נוסף מועדף חדש ל-array');
+                        }
+                    } else {
+                        console.error('שגיאה בעדכון favorite ב-Firestore');
+                    }
                 } else {
-                    favorites.push({
-                        id: existingProduct.id,
-                        name: existingProduct.name,
-                        favorite: true,
-                        category: existingProduct.category,
-                        quantity: item.quantity || '1',
-                        addedAt: new Date().toISOString()
-                    });
-                }
-            } else {
-                // המוצר לא קיים - צור חדש עם favorite=true
-                const newId = await FirebaseManager.addFixedProduct({
-                    name: item.name,
-                    favorite: true,
-                    category: item.category || 'שונות'
-                });
-                if (newId) {
-                    const favoriteItem = {
-                        id: newId,
+                    // המוצר לא קיים - צור חדש עם favorite=true
+                    console.log('יוצר מוצר חדש עם favorite=true');
+                    const newId = await FirebaseManager.addFixedProduct({
                         name: item.name,
                         favorite: true,
-                        category: item.category || 'שונות',
-                        quantity: item.quantity || '1',
-                        addedAt: new Date().toISOString()
-                    };
-                    if (!favorites.find(f => f.id === newId)) {
-                        favorites.push(favoriteItem);
+                        category: item.category || 'שונות'
+                    });
+                    if (newId) {
+                        console.log('מוצר חדש נוצר:', newId);
+                        const favoriteItem = {
+                            id: newId,
+                            name: item.name,
+                            favorite: true,
+                            category: item.category || 'שונות',
+                            quantity: item.quantity || '1',
+                            addedAt: new Date().toISOString()
+                        };
+                        if (!favorites.find(f => f.id === newId)) {
+                            favorites.push(favoriteItem);
+                            console.log('מועדף נוסף ל-array:', favoriteItem);
+                        }
+                    } else {
+                        console.error('שגיאה ביצירת מוצר חדש ב-Firestore');
+                    }
+                }
+            } else {
+                // הסרת מועדף
+                if (existingProduct) {
+                    console.log('מסיר מועדף:', existingProduct.id);
+                    // עדכן את favorite ל-false ב-Firestore
+                    const success = await FirebaseManager.updateProductFavorite(existingProduct.id, false);
+                    if (success) {
+                        // עדכן את favorites array
+                        const favIndex = favorites.findIndex(f => f.id === existingProduct.id);
+                        if (favIndex >= 0) {
+                            favorites[favIndex].favorite = false;
+                            // הסר ממועדפים אם לא favorite
+                            favorites = favorites.filter(f => f.id !== existingProduct.id || f.favorite);
+                            console.log('מועדף הוסר מ-array');
+                        }
+                    } else {
+                        console.error('שגיאה בהסרת favorite ב-Firestore');
                     }
                 }
             }
         } else {
-            // הסרת מועדף
-            if (existingProduct) {
-                // עדכן את favorite ל-false ב-Firestore
-                await FirebaseManager.updateProductFavorite(existingProduct.id, false);
-                // עדכן את favorites array
-                const favIndex = favorites.findIndex(f => f.id === existingProduct.id);
-                if (favIndex >= 0) {
-                    favorites[favIndex].favorite = false;
-                    // הסר ממועדפים אם לא favorite
-                    favorites = favorites.filter(f => f.id !== existingProduct.id || f.favorite);
+            // Fallback ל-localStorage אם אין Firestore
+            console.log('אין Firestore - משתמש ב-localStorage');
+            if (newFavoriteState) {
+                const favoriteItem = {
+                    id: item.id,
+                    name: item.name,
+                    quantity: item.quantity,
+                    category: item.category || 'שונות',
+                    favorite: true,
+                    addedAt: new Date().toISOString()
+                };
+                if (!favorites.find(f => f.id === item.id)) {
+                    favorites.push(favoriteItem);
+                    console.log('מועדף נוסף ל-localStorage:', favoriteItem);
                 }
+            } else {
+                favorites = favorites.filter(f => f.id !== itemId);
+                console.log('מועדף הוסר מ-localStorage');
             }
         }
-    } else {
-        // Fallback ל-localStorage אם אין Firestore
-        if (newFavoriteState) {
-            const favoriteItem = {
-                id: item.id,
-                name: item.name,
-                quantity: item.quantity,
-                category: item.category || 'שונות',
-                favorite: true,
-                addedAt: new Date().toISOString()
-            };
-            if (!favorites.find(f => f.id === item.id)) {
-                favorites.push(favoriteItem);
-            }
-        } else {
-            favorites = favorites.filter(f => f.id !== itemId);
-        }
+
+        // עדכן את הפריט ברשימה
+        item.favorite = newFavoriteState;
+        console.log('מספר מועדפים אחרי עדכון:', favorites.filter(f => f.favorite === true).length);
+
+        saveToLocalStorage();
+        saveFavoritesToLocalStorage();
+        renderList();
+        renderFavorites();
+        await syncSharedList();
+        hapticFeedback();
+    } finally {
+        // שחרר את הדגל אחרי שהעדכון הסתיים
+        setTimeout(() => {
+            isUpdatingFavorite = false;
+            console.log('סיום עדכון מקומי - האזנה מ-Firestore תפעל שוב');
+        }, 1000); // המתן שנייה כדי שהעדכון ב-Firestore יסתיים
     }
-
-    // עדכן את הפריט ברשימה
-    item.favorite = newFavoriteState;
-
-    saveToLocalStorage();
-    saveFavoritesToLocalStorage();
-    renderList();
-    renderFavorites();
-    await syncSharedList();
-    hapticFeedback();
 }
 
 // מחיקת פריט
@@ -1680,10 +1736,12 @@ function renderFavorites() {
     favoritesListContainer.innerHTML = '';
     
     // סנן רק מועדפים עם favorite: true
-    const activeFavorites = favorites.filter(f => f.favorite === true);
+    const activeFavorites = favorites.filter(f => f && f.favorite === true);
+    console.log('renderFavorites - סה"כ מועדפים:', favorites.length, 'פעילים:', activeFavorites.length);
     
     if (activeFavorites.length === 0) {
         favoritesEmptyState.style.display = 'block';
+        console.log('אין מועדפים פעילים - מציג הודעה');
         return;
     }
     
@@ -1740,8 +1798,8 @@ function renderFavorites() {
 
 // יצירת אלמנט מוצר קבוע (עם הוסף לרשימה, ערוך, מחק)
 function createFavoriteItem(favorite) {
-    const div = document.createElement('div');
-    div.className = 'favorite-item';
+    const li = document.createElement('li');
+    li.className = 'favorite-item';
 
     const content = document.createElement('div');
     content.className = 'favorite-item-content';
@@ -1788,10 +1846,10 @@ function createFavoriteItem(favorite) {
     actions.appendChild(editBtn);
     actions.appendChild(deleteBtn);
 
-    div.appendChild(content);
-    div.appendChild(actions);
+    li.appendChild(content);
+    li.appendChild(actions);
 
-    return div;
+    return li;
 }
 
 // רינדור היסטוריה
