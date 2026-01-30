@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>צפייה ברשימת הקניות</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .list-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border-right: 3px solid #4a90e2;
+        }
+        .list-item.purchased {
+            opacity: 0.6;
+            text-decoration: line-through;
+        }
+        .item-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .item-details {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .empty {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+        }
+        .stats {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .stats-item {
+            display: inline-block;
+            margin: 0 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 רשימת הקניות שלך</h1>
+        <div id="stats" class="stats"></div>
+        <div id="list"></div>
+    </div>
+
+    <script>
+        function loadList() {
+            try {
+                const savedList = localStorage.getItem('shoppingList');
+                const listContainer = document.getElementById('list');
+                const statsContainer = document.getElementById('stats');
+                
+                if (!savedList) {
+                    listContainer.innerHTML = '<div class="empty">📦 אין רשימה שמורה</div>';
+                    statsContainer.innerHTML = '<p>אין פריטים ברשימה</p>';
+                    return;
+                }
+                
+                const shoppingList = JSON.parse(savedList);
+                
+                if (!shoppingList || shoppingList.length === 0) {
+                    listContainer.innerHTML = '<div class="empty">📦 הרשימה ריקה</div>';
+                    statsContainer.innerHTML = '<p>אין פריטים ברשימה</p>';
+                    return;
+                }
+                
+                // חישוב סטטיסטיקות
+                const total = shoppingList.length;
+                const purchased = shoppingList.filter(item => item.purchased).length;
+                const remaining = total - purchased;
+                
+                statsContainer.innerHTML = `
+                    <div class="stats-item"><strong>סה"כ פריטים:</strong> ${total}</div>
+                    <div class="stats-item"><strong>נקנו:</strong> ${purchased}</div>
+                    <div class="stats-item"><strong>נותרו:</strong> ${remaining}</div>
+                `;
+                
+                // הצגת הרשימה
+                let html = '';
+                
+                // הפרדה לפי קטגוריות
+                const itemsByCategory = {};
+                const itemsWithoutCategory = [];
+                
+                shoppingList.forEach(item => {
+                    if (item.category && item.category.trim()) {
+                        if (!itemsByCategory[item.category]) {
+                            itemsByCategory[item.category] = [];
+                        }
+                        itemsByCategory[item.category].push(item);
+                    } else {
+                        itemsWithoutCategory.push(item);
+                    }
+                });
+                
+                // הצגת פריטים לפי קטגוריות
+                Object.keys(itemsByCategory).forEach(category => {
+                    html += `<h2 style="margin-top: 20px; color: #4a90e2;">${category}</h2>`;
+                    itemsByCategory[category].forEach(item => {
+                        html += createItemHTML(item);
+                    });
+                });
+                
+                // פריטים ללא קטגוריה
+                if (itemsWithoutCategory.length > 0) {
+                    html += `<h2 style="margin-top: 20px; color: #4a90e2;">ללא קטגוריה</h2>`;
+                    itemsWithoutCategory.forEach(item => {
+                        html += createItemHTML(item);
+                    });
+                }
+                
+                listContainer.innerHTML = html;
+                
+            } catch (error) {
+                document.getElementById('list').innerHTML = 
+                    '<div class="empty">❌ שגיאה בטעינת הרשימה: ' + error.message + '</div>';
+            }
+        }
+        
+        function createItemHTML(item) {
+            const purchasedClass = item.purchased ? 'purchased' : '';
+            const purchasedIcon = item.purchased ? '✓ ' : '☐ ';
+            const favoriteIcon = item.favorite ? ' ⭐' : '';
+            
+            return `
+                <div class="list-item ${purchasedClass}">
+                    <div class="item-name">${purchasedIcon}${item.name}${favoriteIcon}</div>
+                    <div class="item-details">
+                        ${item.quantity ? `כמות: ${item.quantity} | ` : ''}
+                        ${item.category ? `קטגוריה: ${item.category} | ` : ''}
+                        ${item.createdAt ? `נוסף: ${new Date(item.createdAt).toLocaleString('he-IL')}` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // טען את הרשימה בעת טעינת הדף
+        loadList();
+    </script>
+</body>
+</html>

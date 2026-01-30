@@ -125,6 +125,43 @@ const FirebaseManager = {
         }
     },
 
+    /** עדכון סטטוס favorite של מוצר. */
+    async updateProductFavorite(productId, isFavorite) {
+        if (!this.firestore || !productId) return false;
+        try {
+            const ref = this.firestore.collection('products').doc(productId);
+            await ref.update({ favorite: isFavorite === true });
+            return true;
+        } catch (error) {
+            console.error('שגיאה בעדכון favorite:', error);
+            return false;
+        }
+    },
+
+    /** מציאת מוצר לפי שם (לשימוש ב-toggleFavorite). */
+    async findProductByName(productName) {
+        if (!this.firestore || !productName) return null;
+        try {
+            const trimmed = (productName && typeof productName === 'string') ? productName.trim() : '';
+            if (!trimmed) return null;
+            const snapshot = await this.firestore.collection('products')
+                .where('name', '==', trimmed)
+                .limit(1)
+                .get();
+            if (!snapshot.empty) {
+                const doc = snapshot.docs[0];
+                return {
+                    id: doc.id,
+                    ...doc.data()
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('שגיאה בחיפוש מוצר:', error);
+            return null;
+        }
+    },
+
     // יצירת רשימה חדשה
     async createList(listId, initialData) {
         if (!this.database) {
