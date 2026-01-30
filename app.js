@@ -828,11 +828,22 @@ async function handleAddItem(e) {
     e.preventDefault();
     
     const formData = new FormData(e.target);
-    const itemName = formData.get('itemName').trim();
-    const itemQuantity = formData.get('itemQuantity').trim();
-    const itemCategory = formData.get('itemCategory').trim();
+    const itemName = formData.get('itemName');
+    const itemQuantity = formData.get('itemQuantity');
+    const itemCategory = formData.get('itemCategory');
     
-    if (!itemName) {
+    // ולידציה וניקוי
+    const trimmedName = (itemName && typeof itemName === 'string') ? itemName.trim() : '';
+    const trimmedQuantity = (itemQuantity && typeof itemQuantity === 'string') ? itemQuantity.trim() : '';
+    const trimmedCategory = (itemCategory && typeof itemCategory === 'string') ? itemCategory.trim() : '';
+    
+    if (!trimmedName) {
+        return;
+    }
+    
+    // ולידציה של שם המוצר
+    if (!validateItemName(trimmedName)) {
+        alert('שם המוצר לא תקין. אנא הכנס שם תקין (עד 200 תווים).');
         return;
     }
     
