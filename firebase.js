@@ -283,12 +283,31 @@ const FirebaseManager = {
 
     /** טעינת כל הרשימות הקיימות */
     async loadSavedLists() {
-        if (!this.firestore) return [];
+        if (!this.firestore) {
+            console.warn('⚠️ אין Firestore - לא ניתן לטעון רשימות קיימות');
+            return [];
+        }
         try {
-            const snapshot = await this.firestore.collection('savedLists')
-                .orderBy('createdAt', 'desc')
-                .get();
-            return snapshot.docs.map(doc => {
+            console.log('🔄 טוען רשימות קיימות מ-Firestore...');
+            // נסה קודם עם orderBy
+            let snapshot;
+            try {
+                snapshot = await this.firestore.collection('savedLists')
+                    .orderBy('updatedAt', 'desc')
+                    .get();
+                console.log('✅ טעינת רשימות עם orderBy הצליחה:', snapshot.docs.length, 'רשימות');
+            } catch (orderByError) {
+                // אם orderBy נכשל, נסה בלי orderBy
+                if (orderByError.code === 'failed-precondition') {
+                    console.warn('⚠️ orderBy נכשל - טוען בלי orderBy');
+                    snapshot = await this.firestore.collection('savedLists').get();
+                    console.log('✅ טעינת רשימות בלי orderBy הצליחה:', snapshot.docs.length, 'רשימות');
+                } else {
+                    throw orderByError;
+                }
+            }
+            
+            const lists = snapshot.docs.map(doc => {
                 const data = doc.data();
                 return {
                     id: doc.id,
@@ -299,8 +318,16 @@ const FirebaseManager = {
                     sharedListId: data.sharedListId || null
                 };
             });
+            
+            // מיון ידני אם לא היה orderBy
+            if (lists.length > 0 && (!snapshot.query || !snapshot.query.orderBy)) {
+                lists.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            }
+            
+            console.log('✅ נטענו', lists.length, 'רשימות קיימות מ-Firestore');
+            return lists;
         } catch (error) {
-            console.error('שגיאה בטעינת רשימות קיימות:', error);
+            console.error('❌ שגיאה בטעינת רשימות קיימות:', error);
             if (error.code === 'permission-denied' || error.message.includes('permission')) {
                 console.error('❌ שגיאת הרשאות ב-Firestore!');
                 console.error('📋 פתרון:');
@@ -315,18 +342,25 @@ const FirebaseManager = {
 
     /** שמירת רשימה קיימת */
     async saveList(listData) {
-        if (!this.firestore || !listData) return null;
+        if (!this.firestore || !listData) {
+            console.warn('⚠️ אין Firestore או listData - לא ניתן לשמור רשימה');
+            return null;
+        }
         try {
+            console.log('💾 שומר רשימה ל-Firestore:', listData.name, 'עם', listData.items?.length || 0, 'פריטים');
+            const createdAt = listData.createdAt || new Date().toISOString();
             const docRef = await this.firestore.collection('savedLists').add({
                 name: listData.name || 'רשימה ללא שם',
                 items: listData.items || [],
-                createdAt: new Date().toISOString(),
+                createdAt: createdAt,
                 updatedAt: new Date().toISOString(),
                 sharedListId: listData.sharedListId || null
             });
+            console.log('✅ רשימה נשמרה ל-Firestore בהצלחה, ID:', docRef.id);
             return docRef.id;
         } catch (error) {
-            console.error('שגיאה בשמירת רשימה קיימת:', error);
+            console.error('❌ שגיאה בשמירת רשימה קיימת:', error);
+            console.error('פרטי שגיאה:', error.message, error.code);
             if (error.code === 'permission-denied' || error.message.includes('permission')) {
                 console.error('❌ שגיאת הרשאות ב-Firestore!');
                 console.error('📋 פתרון: ראה FIRESTORE_RULES.md');

@@ -3206,13 +3206,17 @@ async function loadSavedListsFromFirestore() {
         try {
             savedLists = await FirebaseManager.loadSavedLists();
             console.log('✅ נטענו', savedLists.length, 'רשימות קיימות מ-Firestore');
+            // עדכן תצוגה מיד אחרי טעינה
+            renderSavedLists();
         } catch (error) {
             console.error('❌ שגיאה בטעינת רשימות קיימות:', error);
             savedLists = [];
+            renderSavedLists();
         }
     } else {
         console.log('⚠️ אין Firestore - אין רשימות קיימות');
         savedLists = [];
+        renderSavedLists();
     }
 }
 
@@ -3259,6 +3263,7 @@ function setupSavedListsListener() {
     };
     
     // האזנה לכל השינויים ב-collection savedLists
+    // נסה קודם עם orderBy, אם נכשל - נסה בלי
     try {
         savedListsListener = FirebaseManager.firestore.collection('savedLists')
             .orderBy('updatedAt', 'desc')
@@ -3266,26 +3271,45 @@ function setupSavedListsListener() {
                 handleSavedListsSnapshot(snapshot);
             }, (error) => {
                 // אם orderBy נכשל, נסה בלי orderBy
-                if (error.code === 'failed-precondition') {
-                    console.warn('orderBy נכשל - מנסה בלי orderBy');
-                    savedListsListener = FirebaseManager.firestore.collection('savedLists')
-                        .onSnapshot((snapshot) => {
-                            handleSavedListsSnapshot(snapshot);
-                        }, (error) => {
-                            console.error('שגיאה בהאזנה לרשימות קיימות:', error);
-                        });
+                if (error.code === 'failed-precondition' || error.code === 'unavailable') {
+                    console.warn('⚠️ orderBy נכשל - מנסה בלי orderBy:', error.message);
+                    try {
+                        savedListsListener = FirebaseManager.firestore.collection('savedLists')
+                            .onSnapshot((snapshot) => {
+                                handleSavedListsSnapshot(snapshot);
+                            }, (snapshotError) => {
+                                console.error('❌ שגיאה בהאזנה לרשימות קיימות:', snapshotError);
+                                if (snapshotError.code === 'permission-denied') {
+                                    console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                                }
+                            });
+                    } catch (e) {
+                        console.error('❌ שגיאה ביצירת האזנה בלי orderBy:', e);
+                    }
                 } else {
-                    console.error('שגיאה בהאזנה לרשימות קיימות:', error);
+                    console.error('❌ שגיאה בהאזנה לרשימות קיימות:', error);
+                    if (error.code === 'permission-denied') {
+                        console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                    }
                 }
             });
+        console.log('✅ האזנה לרשימות קיימות הופעלה');
     } catch (error) {
-        console.warn('שגיאה בהתחלת האזנה - מנסה בלי orderBy:', error);
-        savedListsListener = FirebaseManager.firestore.collection('savedLists')
-            .onSnapshot((snapshot) => {
-                handleSavedListsSnapshot(snapshot);
-            }, (error) => {
-                console.error('שגיאה בהאזנה לרשימות קיימות:', error);
-            });
+        console.warn('⚠️ שגיאה בהתחלת האזנה - מנסה בלי orderBy:', error);
+        try {
+            savedListsListener = FirebaseManager.firestore.collection('savedLists')
+                .onSnapshot((snapshot) => {
+                    handleSavedListsSnapshot(snapshot);
+                }, (snapshotError) => {
+                    console.error('❌ שגיאה בהאזנה לרשימות קיימות:', snapshotError);
+                    if (snapshotError.code === 'permission-denied') {
+                        console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                    }
+                });
+            console.log('✅ האזנה לרשימות קיימות הופעלה (בלי orderBy)');
+        } catch (e) {
+            console.error('❌ שגיאה ביצירת האזנה:', e);
+        }
     }
 }
 
