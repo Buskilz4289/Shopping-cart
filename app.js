@@ -229,6 +229,93 @@ function setupFavoritesListener() {
     favoritesListener = unsubscribe;
 }
 
+// עדכון גרסת האפליקציה - עדכון Service Worker, ניקוי מטמון וטעינה מחדש
+async function updateApplicationVersion() {
+    const updateButton = document.getElementById('updateVersionButton');
+    const originalText = updateButton ? updateButton.textContent : '';
+    
+    // הצג הודעה למשתמש
+    if (updateButton) {
+        updateButton.textContent = '⏳ מעדכן...';
+        updateButton.disabled = true;
+    }
+    
+    try {
+        // 1. עדכון Service Worker
+        if ('serviceWorker' in navigator) {
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (registration) {
+                    console.log('מעדכן Service Worker...');
+                    await registration.update();
+                    
+                    // בדוק אם יש Service Worker חדש שממתין
+                    if (registration.waiting) {
+                        console.log('Service Worker חדש ממתין - מעדכן...');
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                    
+                    // נסה לשלוח הודעה ל-Service Worker לעדכן את המטמון
+                    if (registration.active) {
+                        registration.active.postMessage({ type: 'CLEAR_CACHE' });
+                    }
+                    
+                    console.log('Service Worker עודכן בהצלחה');
+                } else {
+                    console.log('אין Service Worker רשום');
+                }
+            } catch (error) {
+                console.error('שגיאה בעדכון Service Worker:', error);
+            }
+        }
+        
+        // 2. ניקוי מטמון
+        if ('caches' in window) {
+            try {
+                console.log('מנקה מטמון...');
+                const cacheNames = await caches.keys();
+                await Promise.all(
+                    cacheNames.map(cacheName => {
+                        console.log('מוחק מטמון:', cacheName);
+                        return caches.delete(cacheName);
+                    })
+                );
+                console.log('מטמון נוקה בהצלחה');
+            } catch (error) {
+                console.error('שגיאה בניקוי מטמון:', error);
+            }
+        }
+        
+        // 3. הודעה למשתמש
+        if (updateButton) {
+            updateButton.textContent = '✓ עודכן!';
+            updateButton.style.backgroundColor = 'var(--success-color, #4caf50)';
+        }
+        
+        // 4. טעינה מחדש אחרי שנייה
+        setTimeout(() => {
+            console.log('טוען מחדש את הדף...');
+            window.location.reload(true);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('שגיאה בעדכון גרסה:', error);
+        
+        if (updateButton) {
+            updateButton.textContent = '❌ שגיאה';
+            updateButton.style.backgroundColor = 'var(--error-color, #f44336)';
+            
+            setTimeout(() => {
+                updateButton.textContent = originalText;
+                updateButton.style.backgroundColor = '';
+                updateButton.disabled = false;
+            }, 2000);
+        }
+        
+        alert('אירעה שגיאה בעדכון הגרסה. אנא נסה שוב.');
+    }
+}
+
 // הגדרת מאזיני אירועים
 function setupEventListeners() {
     addItemForm.addEventListener('submit', handleAddItem);
@@ -238,6 +325,14 @@ function setupEventListeners() {
     shoppingModeToggle.addEventListener('click', toggleShoppingMode);
     exitShoppingModeBtn.addEventListener('click', exitShoppingMode);
     shareListBtn.addEventListener('click', showSharingSection);
+    
+    // כפתור עדכון גרסה
+    const updateVersionButton = document.getElementById('updateVersionButton');
+    if (updateVersionButton) {
+        updateVersionButton.addEventListener('click', async () => {
+            await updateApplicationVersion();
+        });
+    }
     
     // כפתור רענון
     const refreshButton = document.getElementById('refreshButton');
