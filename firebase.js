@@ -200,6 +200,14 @@ const FirebaseManager = {
             return products;
         } catch (error) {
             console.error('שגיאה בטעינת מוצרים שהוספתי:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון:');
+                console.error('1. לך ל-Firebase Console → Firestore Database → Rules');
+                console.error('2. העתק את הכללים מ-FIRESTORE_RULES.md');
+                console.error('3. לחץ על "Publish"');
+                console.error('4. רענן את האפליקציה');
+            }
             return [];
         }
     },
@@ -293,6 +301,14 @@ const FirebaseManager = {
             });
         } catch (error) {
             console.error('שגיאה בטעינת רשימות קיימות:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון:');
+                console.error('1. לך ל-Firebase Console → Firestore Database → Rules');
+                console.error('2. העתק את הכללים מ-FIRESTORE_RULES.md');
+                console.error('3. לחץ על "Publish"');
+                console.error('4. רענן את האפליקציה');
+            }
             return [];
         }
     },
@@ -311,6 +327,10 @@ const FirebaseManager = {
             return docRef.id;
         } catch (error) {
             console.error('שגיאה בשמירת רשימה קיימת:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון: ראה FIRESTORE_RULES.md');
+            }
             return null;
         }
     },
@@ -340,6 +360,10 @@ const FirebaseManager = {
             return true;
         } catch (error) {
             console.error('שגיאה במחיקת רשימה קיימת:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון: ראה FIRESTORE_RULES.md');
+            }
             return false;
         }
     },
