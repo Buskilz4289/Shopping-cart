@@ -10,6 +10,7 @@ let recurringItems = [];
 let sharedListId = null;
 let currentListName = null;   // שם הרשימה הנוכחית
 let currentListCreatedAt = null;  // תאריך יצירת הרשימה הנוכחית
+let currentSavedListId = null;  // ID של הרשימה ב-savedLists (אם נשמרה)
 
 // UI state – ניווט ומצב תצוגה (לא נשמר ב-Firestore)
 let isShoppingMode = false;
@@ -977,6 +978,9 @@ async function handleAddItem(e) {
     setTimeout(() => {
         renderAddedProducts();
     }, 100);
+    
+    // שמירה אוטומטית לרשימות קיימות (אם יש שם רשימה)
+    autoSaveListToSavedLists();
     updateSmartSummary();
     debouncedSync();
     updateUrlWithListId();
@@ -2831,6 +2835,12 @@ function saveToLocalStorage() {
         if (currentListCreatedAt) {
             localStorage.setItem('currentListCreatedAt', currentListCreatedAt);
         }
+        if (currentSavedListId) {
+            localStorage.setItem('currentSavedListId', currentSavedListId);
+        }
+        if (currentSavedListId) {
+            localStorage.setItem('currentSavedListId', currentSavedListId);
+        }
     } catch (error) {
         console.error('שגיאה בשמירת הנתונים:', error);
         // Check if quota exceeded
@@ -2860,6 +2870,10 @@ function loadFromLocalStorage() {
         const savedListDate = localStorage.getItem('currentListCreatedAt');
         if (savedListDate) {
             currentListCreatedAt = savedListDate;
+        }
+        const savedListId = localStorage.getItem('currentSavedListId');
+        if (savedListId) {
+            currentSavedListId = savedListId;
         }
         
         // addedProducts נטענים מ-Firestore - לא מ-localStorage
@@ -3093,10 +3107,59 @@ function editListName() {
     saveToLocalStorage();
     updateListNameDisplay();
     debouncedSync(); // סנכרן עם Firebase
+    
+    // שמירה אוטומטית לרשימות קיימות (אם יש פריטים)
+    if (shoppingList.length > 0) {
+        autoSaveListToSavedLists();
+    }
+    
     hapticFeedback();
 }
 
-// שמירת רשימה נוכחית לרשימות קיימות
+// שמירה אוטומטית של רשימה לרשימות קיימות (אם יש שם ופריטים)
+async function autoSaveListToSavedLists() {
+    // שמור רק אם יש שם רשימה ופריטים
+    if (!currentListName || shoppingList.length === 0) {
+        return;
+    }
+    
+    if (!FirebaseManager || !FirebaseManager.firestore) {
+        return;
+    }
+    
+    try {
+        // אם הרשימה כבר נשמרה, עדכן אותה
+        if (currentSavedListId) {
+            const success = await FirebaseManager.updateSavedList(currentSavedListId, {
+                name: currentListName,
+                items: shoppingList,
+                sharedListId: sharedListId,
+                createdAt: currentListCreatedAt
+            });
+            if (success) {
+                console.log('✅ רשימה עודכנה אוטומטית ברשימות קיימות:', currentSavedListId);
+            }
+        } else {
+            // אם לא נשמרה, שמור אותה
+            const listId = await FirebaseManager.saveList({
+                name: currentListName,
+                items: shoppingList,
+                sharedListId: sharedListId,
+                createdAt: currentListCreatedAt
+            });
+            
+            if (listId) {
+                currentSavedListId = listId;
+                localStorage.setItem('currentSavedListId', listId);
+                console.log('✅ רשימה נשמרה אוטומטית לרשימות קיימות:', listId);
+            }
+        }
+    } catch (error) {
+        console.error('❌ שגיאה בשמירה אוטומטית לרשימות קיימות:', error);
+    }
+}
+
+// שמירת רשימה נוכחית לרשימות קיימות (ידנית)
 async function saveCurrentListToSavedLists() {
     if (shoppingList.length === 0) {
         return;
@@ -3125,17 +3188,33 @@ async function saveCurrentListToSavedLists() {
     updateListNameDisplay();
     
     if (FirebaseManager && FirebaseManager.firestore) {
-        const listId = await FirebaseManager.saveList({
-            name: trimmedListName,
-            items: shoppingList,
-            sharedListId: sharedListId,
-            createdAt: currentListCreatedAt
-        });
-        
-        if (listId) {
-            console.log('✅ רשימה נשמרה לרשימות קיימות:', listId);
+        // אם יש כבר savedListId, עדכן את הרשימה הקיימת
+        if (currentSavedListId) {
+            const success = await FirebaseManager.updateSavedList(currentSavedListId, {
+                name: trimmedListName,
+                items: shoppingList,
+                sharedListId: sharedListId,
+                createdAt: currentListCreatedAt
+            });
+            if (success) {
+                console.log('✅ רשימה עודכנה ברשימות קיימות:', currentSavedListId);
+            }
         } else {
-            console.error('❌ שגיאה בשמירת רשימה לרשימות קיימות');
+            // אחרת, צור רשימה חדשה
+            const listId = await FirebaseManager.saveList({
+                name: trimmedListName,
+                items: shoppingList,
+                sharedListId: sharedListId,
+                createdAt: currentListCreatedAt
+            });
+            
+            if (listId) {
+                currentSavedListId = listId;
+                localStorage.setItem('currentSavedListId', listId);
+                console.log('✅ רשימה נשמרה לרשימות קיימות:', listId);
+            } else {
+                console.error('❌ שגיאה בשמירת רשימה לרשימות קיימות');
+            }
         }
     } else {
         console.warn('⚠️ אין Firestore - לא ניתן לשמור רשימה קיימת');
