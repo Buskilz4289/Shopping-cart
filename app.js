@@ -960,10 +960,22 @@ async function handleAddItem(e) {
         renderAddedProducts();
     }, 100);
     
-    // שמירה אוטומטית לרשימות קיימות (אם יש שם רשימה)
-    autoSaveListToSavedLists();
+    // שמירה אוטומטית לרשימות קיימות (אם יש שם רשימה) - עם טיפול בשגיאות
+    autoSaveListToSavedLists().catch(error => {
+        console.warn('שגיאה בשמירה אוטומטית לרשימות קיימות:', error);
+        // המשך - זה לא קריטי
+    });
+    
     updateSmartSummary();
-    debouncedSync();
+    
+    // סנכרון עם Firebase - עם טיפול בשגיאות
+    try {
+        debouncedSync();
+    } catch (error) {
+        console.warn('שגיאה בסנכרון:', error);
+        // המשך - זה לא קריטי
+    }
+    
     updateUrlWithListId();
     
     e.target.reset();
@@ -2969,6 +2981,19 @@ window.addEventListener('error', (event) => {
 
 window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection:', event.reason);
+    
+    // התעלם משגיאות לא קריטיות (כמו permission-denied ב-Firestore)
+    const reason = event.reason;
+    if (reason && (
+        (reason.code === 'permission-denied') ||
+        (reason.message && reason.message.includes('permission')) ||
+        (reason.message && reason.message.includes('Missing or insufficient permissions'))
+    )) {
+        console.warn('שגיאת הרשאות - לא מציג הודעה למשתמש');
+        event.preventDefault();
+        return;
+    }
+    
     event.preventDefault(); // Prevent default browser handling
     // Handle gracefully
     const errorMsg = document.createElement('div');
