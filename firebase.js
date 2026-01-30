@@ -162,6 +162,126 @@ const FirebaseManager = {
         }
     },
 
+    // ---------- מוצרים שהוספתי (גלובליים) - Firestore collection: addedProducts ----------
+    // מוצרים גלובליים שכל המשתמשים רואים - בסיס לכל הרשימות
+
+    /** טעינת כל המוצרים שהוספו (גלובליים) */
+    async loadAddedProducts() {
+        if (!this.firestore) return [];
+        try {
+            // נסה עם orderBy, אם נכשל - נסה בלי
+            let snapshot;
+            try {
+                snapshot = await this.firestore.collection('addedProducts').orderBy('name').get();
+            } catch (error) {
+                if (error.code === 'failed-precondition') {
+                    // אין אינדקס - נסה בלי orderBy
+                    console.warn('orderBy נכשל - טוען בלי orderBy');
+                    snapshot = await this.firestore.collection('addedProducts').get();
+                } else {
+                    throw error;
+                }
+            }
+            
+            const products = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    name: data.name || '',
+                    quantity: data.quantity || '1',
+                    category: data.category != null ? data.category : null,
+                    addedAt: data.addedAt || new Date().toISOString()
+                };
+            }).filter(p => p.name);
+            
+            // מיון ידני אם אין orderBy
+            products.sort((a, b) => a.name.localeCompare(b.name, 'he'));
+            
+            return products;
+        } catch (error) {
+            console.error('שגיאה בטעינת מוצרים שהוספתי:', error);
+            return [];
+        }
+    },
+
+    /** הוספת מוצר לרשימה הגלובלית */
+    async addGlobalProduct(product) {
+        console.log('🔥 addGlobalProduct נקרא עם:', product);
+        if (!this.firestore) {
+            console.error('❌ אין firestore ב-FirebaseManager');
+            return null;
+        }
+        if (!product || !product.name) {
+            console.error('❌ product או product.name חסרים');
+            return null;
+        }
+        
+        try {
+            const trimmed = (product.name && typeof product.name === 'string') ? product.name.trim() : '';
+            if (!trimmed) {
+                console.error('❌ שם מוצר ריק אחרי trim');
+                return null;
+            }
+            
+            console.log('🔍 בודק אם המוצר כבר קיים:', trimmed);
+            // בדוק אם המוצר כבר קיים
+            const existing = await this.firestore.collection('addedProducts')
+                .where('name', '==', trimmed)
+                .limit(1)
+                .get();
+            
+            if (!existing.empty) {
+                // המוצר כבר קיים - החזר את ה-ID שלו
+                const existingId = existing.docs[0].id;
+                console.log('✅ מוצר כבר קיים ב-Firestore, מחזיר ID:', existingId);
+                return existingId;
+            }
+            
+            console.log('➕ מוצר לא קיים - יוצר חדש ב-Firestore');
+            // הוסף מוצר חדש
+            const docRef = await this.firestore.collection('addedProducts').add({
+                name: trimmed,
+                quantity: product.quantity || '1',
+                category: product.category != null ? product.category : null,
+                addedAt: new Date().toISOString()
+            });
+            console.log('✅ מוצר חדש נוצר ב-Firestore, ID:', docRef.id);
+            return docRef.id;
+        } catch (error) {
+            console.error('❌ שגיאה בהוספת מוצר גלובלי:', error);
+            console.error('פרטי שגיאה מלאים:', {
+                message: error.message,
+                code: error.code,
+                stack: error.stack,
+                name: error.name
+            });
+            
+            // אם זו שגיאת הרשאות, נסה להוסיף ל-localStorage
+            if (error.code === 'permission-denied') {
+                console.warn('⚠️ אין הרשאות ל-Firestore - המוצר לא יישמר גלובלית');
+                console.warn('💡 פתרון: בדוק את כללי האבטחה ב-Firestore Console');
+            } else if (error.code === 'unavailable') {
+                console.warn('⚠️ Firestore לא זמין - ייתכן שאין חיבור לאינטרנט');
+            } else if (error.code === 'failed-precondition') {
+                console.warn('⚠️ Firestore לא מוכן - ייתכן שצריך אינדקס');
+            }
+            
+            return null;
+        }
+    },
+
+    /** מחיקת מוצר מהרשימה הגלובלית */
+    async deleteGlobalProduct(productId) {
+        if (!this.firestore || !productId) return false;
+        try {
+            await this.firestore.collection('addedProducts').doc(productId).delete();
+            return true;
+        } catch (error) {
+            console.error('שגיאה במחיקת מוצר גלובלי:', error);
+            return false;
+        }
+    },
+
     // יצירת רשימה חדשה
     async createList(listId, initialData) {
         if (!this.database) {
