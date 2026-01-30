@@ -248,34 +248,12 @@ async function createFixedProducts() {
     }
 }
 
-/** טוענת מוצרי קבע מ-Firestore ל-UI (משמשת את favorites לתצוגה). */
-async function loadFixedProducts() {
-    if (FirebaseManager && FirebaseManager.firestore) {
-        const products = await FirebaseManager.loadFixedProducts();
-        favorites = (products || []).map(p => ({
-            id: p.id,
-            name: p.name,
-            favorite: p.favorite === true,
-            category: p.category,
-            quantity: '1',
-            addedAt: new Date().toISOString()
-        }));
-        return;
-    }
-    const savedFavorites = localStorage.getItem('favorites');
-    if (savedFavorites) {
-        try {
-            const parsed = JSON.parse(savedFavorites);
-            favorites = parsed.filter(f => f && f.name);
-        } catch (e) {
-            favorites = [];
-        }
-    } else {
-        favorites = [];
-    }
-}
-
+// פונקציה זו הוסרה - משתמשים ב-loadAddedProductsFromFirestore במקום
 // כל הקוד הקשור למועדפים הוסר - משתמשים ב-addedProducts במקום
+async function loadFixedProducts() {
+    // פונקציה זו הוסרה - לא בשימוש
+    console.warn('loadFixedProducts הוסרה - השתמש ב-loadAddedProductsFromFirestore');
+}
 
 // עדכון גרסת האפליקציה - עדכון Service Worker, ניקוי מטמון וטעינה מחדש
 async function updateApplicationVersion() {
@@ -594,7 +572,8 @@ function enterShoppingMode() {
     const addItemSection = document.getElementById('addItemForm')?.closest('.add-item-section');
     const tabsNav = document.querySelector('.tabs-nav');
     const currentTab = document.getElementById('currentTab');
-    const favoritesTab = document.getElementById('favoritesTab');
+    // favoritesTab הוסר - לא בשימוש
+    // const favoritesTab = document.getElementById('favoritesTab');
     const historyTab = document.getElementById('historyTab');
     const sharingSection = document.getElementById('sharingSection');
     
@@ -606,10 +585,11 @@ function enterShoppingMode() {
         currentTab.classList.remove('active');
         currentTab.style.display = 'none';
     }
-    if (favoritesTab) {
-        favoritesTab.classList.remove('active');
-        favoritesTab.style.display = 'none';
-    }
+    // favoritesTab הוסר - לא בשימוש
+    // if (favoritesTab) {
+    //     favoritesTab.classList.remove('active');
+    //     favoritesTab.style.display = 'none';
+    // }
     if (historyTab) {
         historyTab.classList.remove('active');
         historyTab.style.display = 'none';
@@ -645,7 +625,8 @@ function exitShoppingMode() {
     document.getElementById('addItemForm').closest('.add-item-section').style.display = 'block';
     document.querySelector('.tabs-nav').style.display = 'flex';
     document.getElementById('currentTab').style.display = 'block';
-    document.getElementById('favoritesTab').style.display = '';
+    // favoritesTab הוסר - לא בשימוש
+    // document.getElementById('favoritesTab').style.display = '';
     document.getElementById('historyTab').style.display = '';
     
     const shoppingModeTab = document.getElementById('shoppingModeTab');
@@ -1253,7 +1234,7 @@ async function restoreFromHistory(historyId) {
             quantity: item.quantity,
             category: item.category,
             purchased: false,
-            favorite: favorites.some(f => normalizeText(f.name) === normalizeText(item.name)),
+            // favorite הוסר - משתמשים ב-addedProducts במקום
             createdAt: new Date().toISOString()
         }));
         
@@ -1272,20 +1253,12 @@ async function restoreFromHistory(historyId) {
  * @param {string|null} listRef - מזהה הרשימה (listId) ל-Firebase; null = רשימה מקומית בלבד
  * @param {string} productName - שם המוצר הקבוע
  */
+// פונקציה זו הוסרה - משתמשים ב-addedProducts במקום מועדפים
+// אם צריך להוסיף מוצר מ-addedProducts, השתמש ב-addAddedProductToList
 async function addFixedProductToList(listRef, productName) {
-    const name = (productName && typeof productName === 'string') ? productName.trim() : '';
-    if (!name) return;
-
-    const p = favorites.find(f => normalizeText(f.name) === normalizeText(name));
-    if (!p) return;
-
-    const exists = shoppingList.some(item =>
-        normalizeText(item.name) === normalizeText(p.name) && !item.purchased
-    );
-    if (exists) {
-        alert('הפריט כבר קיים ברשימה');
-        return;
-    }
+    // פונקציה זו הוסרה - לא בשימוש
+    console.warn('addFixedProductToList הוסרה - השתמש ב-addAddedProductToList');
+}
 
     const newItem = {
         id: Date.now().toString(),
@@ -1317,30 +1290,20 @@ async function addFixedProductToList(listRef, productName) {
  * @param {string} newName - שם חדש
  * @param {string|null} newCategory - קטגוריה (אופציונלי, ברירת מחדל null)
  */
+// פונקציה זו הוסרה - משתמשים ב-addedProducts במקום
 async function editFixedProduct(productId, newName, newCategory = null) {
-    if (!FirebaseManager || !FirebaseManager.firestore) return;
-    const ok = await FirebaseManager.editFixedProduct(productId, newName, newCategory);
-    if (ok) {
-        await loadFixedProducts();
-        renderProductsView();
-        hapticFeedback();
-    }
+    // פונקציה זו הוסרה - לא בשימוש
+    console.warn('editFixedProduct הוסרה - לא בשימוש');
 }
 
 /**
  * מוחקת מוצר קבוע מ-Firestore ומהתצוגה (לא מוחקת מרשימות קניות).
  * @param {string} productId - מזהה המוצר ב-Firestore
  */
+// פונקציה זו הוסרה - משתמשים ב-deleteAddedProduct במקום
 async function deleteFixedProduct(productId) {
-    const product = favorites.find(f => f.id === productId);
-    if (!product) return;
-    if (!confirm('האם למחוק את המוצר "' + product.name + '" ממוצרי הקבע?')) return;
-
-    if (FirebaseManager && FirebaseManager.firestore) {
-        const ok = await FirebaseManager.deleteFixedProduct(productId);
-        if (!ok) return;
-    }
-    // קוד זה הוסר - אין עוד מועדפים
+    // פונקציה זו הוסרה - לא בשימוש
+    console.warn('deleteFixedProduct הוסרה - השתמש ב-deleteAddedProduct');
 }
 
 // מחיקת מועדף / מוצר קבע – מפנה ל-deleteFixedProduct
@@ -1435,22 +1398,24 @@ function getAutocompleteSuggestions(query) {
     const suggestions = [];
     const seenNames = new Set();
     
-    // מועדפים
-    favorites.forEach(fav => {
-        if (normalizeText(fav.name).includes(normalizedQuery)) {
-            const normalizedName = normalizeText(fav.name);
-            if (!seenNames.has(normalizedName)) {
-                seenNames.add(normalizedName);
-                suggestions.push({
-                    type: 'favorite',
-                    name: fav.name,
-                    quantity: fav.quantity,
-                    category: fav.category,
-                    icon: '⭐'
-                });
+    // מוצרים שהוספתי (במקום מועדפים)
+    if (addedProducts && Array.isArray(addedProducts)) {
+        addedProducts.forEach(product => {
+            if (normalizeText(product.name).includes(normalizedQuery)) {
+                const normalizedName = normalizeText(product.name);
+                if (!seenNames.has(normalizedName)) {
+                    seenNames.add(normalizedName);
+                    suggestions.push({
+                        type: 'added',
+                        name: product.name,
+                        quantity: product.quantity,
+                        category: product.category,
+                        icon: '📦'
+                    });
+                }
             }
-        }
-    });
+        });
+    }
     
     // מוצרים חוזרים
     recurringItems.forEach(item => {
