@@ -1679,7 +1679,10 @@ function renderProductsView() {
 function renderFavorites() {
     favoritesListContainer.innerHTML = '';
     
-    if (favorites.length === 0) {
+    // סנן רק מועדפים עם favorite: true
+    const activeFavorites = favorites.filter(f => f.favorite === true);
+    
+    if (activeFavorites.length === 0) {
         favoritesEmptyState.style.display = 'block';
         return;
     }
@@ -1689,7 +1692,7 @@ function renderFavorites() {
     // הפרד לפי קטגוריות
     const favoritesByCategory = {};
     
-    favorites.forEach(favorite => {
+    activeFavorites.forEach(favorite => {
         const category = favorite.category || 'שונות';
         if (!favoritesByCategory[category]) {
             favoritesByCategory[category] = [];
