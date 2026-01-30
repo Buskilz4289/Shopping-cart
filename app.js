@@ -1260,30 +1260,6 @@ async function addFixedProductToList(listRef, productName) {
     console.warn('addFixedProductToList הוסרה - השתמש ב-addAddedProductToList');
 }
 
-    const newItem = {
-        id: Date.now().toString(),
-        name: p.name,
-        quantity: p.quantity || '1',
-        category: p.category != null ? p.category : null,
-        purchased: false,
-        favorite: true,
-        productId: p.id || null,
-        createdAt: new Date().toISOString()
-    };
-
-    shoppingList.push(newItem);
-    saveToLocalStorage();
-    renderShoppingList();
-    updateSmartSummary();
-
-    if (listRef && FirebaseManager && FirebaseManager.database) {
-        await FirebaseManager.updateList(listRef, shoppingList);
-    } else if (sharedListId && FirebaseManager && FirebaseManager.database) {
-        await FirebaseManager.updateList(sharedListId, shoppingList);
-    }
-    hapticFeedback();
-}
-
 /**
  * מעדכן מוצר קבוע – שם ו/או קטגוריה.
  * @param {string} productId - מזהה המוצר ב-Firestore
