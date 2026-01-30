@@ -134,6 +134,7 @@
                 <button class="tab-btn active" data-tab="current">הרשימה שלי</button>
                 <button class="tab-btn" data-tab="added">מוצרים שהוספתי</button>
                 <button class="tab-btn" data-tab="history">היסטוריית קניות</button>
+                <button class="tab-btn" data-tab="saved">רשימות קיימות</button>
             </nav>
 
             <!-- Sharing Section -->
@@ -248,6 +249,20 @@
                 </div>
                 
                 <div id="historyList" class="history-list"></div>
+            </section>
+
+            <!-- Saved Lists Section -->
+            <section id="savedTab" class="tab-content">
+                <div class="list-header">
+                    <h2>רשימות קיימות</h2>
+                </div>
+                
+                <div id="savedEmptyState" class="empty-state">
+                    <p>📋 אין רשימות קיימות</p>
+                    <p class="empty-state-hint">רשימות שתיצור יופיעו כאן</p>
+                </div>
+                
+                <ul id="savedLists" class="saved-lists"></ul>
             </section>
         </main>
     </div>

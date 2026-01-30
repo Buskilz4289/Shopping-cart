@@ -11,7 +11,8 @@ let sharedListId = null;
 
 // UI state – ניווט ומצב תצוגה (לא נשמר ב-Firestore)
 let isShoppingMode = false;
-let currentView = 'current';  // 'current' | 'added' | 'history'
+let currentView = 'current';  // 'current' | 'added' | 'history' | 'saved'
+let savedLists = [];  // רשימות קיימות - כל הרשימות של כל המשתמשים
 let hidePurchasedInView = false;  // אחרי "סיום קנייה" – להסתיר נקנו רק בתצוגה
 
 let autocompleteSuggestions = [];
@@ -51,6 +52,57 @@ const CATEGORIES = [
     'שונות'
 ];
 
+// קבועים לוולידציה
+const CONSTANTS = {
+    MAX_NAME_LENGTH: 200,
+    MAX_QUANTITY_LENGTH: 10,
+    MAX_LIST_NAME_LENGTH: 100,
+    MAX_QUEUE_SIZE: 10,
+    MAX_QUEUE_AGE_MS: 7 * 24 * 60 * 60 * 1000, // 7 days
+    SYNC_DEBOUNCE_MS: 1000,
+    MAX_HISTORY_ENTRIES: 50
+};
+
+// פונקציות ולידציה
+function validateItemName(name) {
+    if (!name || typeof name !== 'string') return false;
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > CONSTANTS.MAX_NAME_LENGTH) return false;
+    // Block script tags and dangerous patterns
+    if (/<script|javascript:|onerror=|onload=/i.test(trimmed)) return false;
+    return true;
+}
+
+function validateQuantity(qty) {
+    if (!qty || qty.trim() === '') return true; // Optional
+    const trimmed = qty.trim();
+    if (trimmed.length > CONSTANTS.MAX_QUANTITY_LENGTH) return false;
+    const num = parseFloat(trimmed);
+    return !isNaN(num) && num > 0 && num < 10000;
+}
+
+function validateCategory(category) {
+    if (!category || category.trim() === '') return true; // Optional
+    return CATEGORIES.includes(category.trim());
+}
+
+function validateListName(name) {
+    if (!name || typeof name !== 'string') return false;
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > CONSTANTS.MAX_LIST_NAME_LENGTH) return false;
+    if (/<script|javascript:/i.test(trimmed)) return false;
+    return true;
+}
+
+function safeJSONParse(str, defaultValue = null) {
+    try {
+        return JSON.parse(str);
+    } catch (error) {
+        console.error('JSON parse error:', error);
+        return defaultValue;
+    }
+}
+
 
 // אלמנטי DOM
 const addItemForm = document.getElementById('addItemForm');
@@ -62,6 +114,8 @@ const shoppingModeList = document.getElementById('shoppingModeList');
 const emptyState = document.getElementById('emptyState');
 const addedEmptyState = document.getElementById('addedEmptyState');
 const historyEmptyState = document.getElementById('historyEmptyState');
+const savedListsContainer = document.getElementById('savedLists');
+const savedEmptyState = document.getElementById('savedEmptyState');
 const clearPurchasedBtn = document.getElementById('clearPurchasedBtn');
 const smartCleanupBtn = document.getElementById('smartCleanupBtn');
 const shareListBtn = document.getElementById('shareListBtn');
@@ -103,11 +157,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // התחל האזנה לעדכוני מוצרים שהוספתי מ-Firestore
     setupAddedProductsListener();
+    
+    // טען רשימות קיימות מ-Firestore
+    await loadSavedListsFromFirestore();
+    
+    // התחל האזנה לעדכוני רשימות קיימות מ-Firestore
+    setupSavedListsListener();
 
     setupEventListeners();
     loadTheme();
     checkAndSaveHistory();
+    
+    // הגדר שיתוף - תמיד ננסה להתחיל האזנה אם יש sharedListId
     setupSharing();
+    
+    // אם אין sharedListId, צור אחד אוטומטית והתחל האזנה
+    if (!sharedListId) {
+        sharedListId = 'list-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('sharedListId', sharedListId);
+        updateUrlWithListId();
+        
+        // צור רשימה ב-Firebase
+        if (FirebaseManager && FirebaseManager.database) {
+            const currentList = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+            await FirebaseManager.createList(sharedListId, {
+                items: currentList
+            });
+            console.log('רשימה משותפת נוצרה אוטומטית:', sharedListId);
+        }
+        
+        // התחל האזנה
+        setupSharing();
+    }
     setupAutocomplete();
     setupMobileGestures();
     
@@ -375,6 +456,8 @@ function switchTab(tabName) {
             renderHistory();
         } else if (tabName === 'current') {
             renderList();
+        } else if (tabName === 'saved') {
+            renderSavedLists();
         }
     }
 }
@@ -531,7 +614,9 @@ function renderShoppingMode() {
         if (unpurchasedByCategory[category] && unpurchasedByCategory[category].length > 0) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header shopping-mode-category-header';
-            categoryHeader.innerHTML = `<h4>${category}</h4>`;
+            const h4 = document.createElement('h4');
+            h4.textContent = category;
+            categoryHeader.appendChild(h4);
             shoppingModeList.appendChild(categoryHeader);
             
             unpurchasedByCategory[category].forEach(item => {
@@ -545,7 +630,9 @@ function renderShoppingMode() {
         if (!CATEGORIES.includes(category)) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header shopping-mode-category-header';
-            categoryHeader.innerHTML = `<h4>${category}</h4>`;
+            const h4 = document.createElement('h4');
+            h4.textContent = category;
+            categoryHeader.appendChild(h4);
             shoppingModeList.appendChild(categoryHeader);
             
             unpurchasedByCategory[category].forEach(item => {
@@ -660,20 +747,20 @@ async function handleAddItem(e) {
     // בדיקת כפילויות
     const duplicate = shoppingList.find(item => 
         !item.purchased && 
-        normalizeText(item.name) === normalizeText(itemName)
+        normalizeText(item.name) === normalizeText(trimmedName)
     );
     
     if (duplicate) {
-        if (!confirm(`הפריט "${itemName}" כבר קיים ברשימה. האם להוסיף בכל זאת?`)) {
+        if (!confirm(`הפריט "${trimmedName}" כבר קיים ברשימה. האם להוסיף בכל זאת?`)) {
             return;
         }
     }
     
     const newItem = {
-        id: Date.now().toString(),
-        name: itemName,
-        quantity: itemQuantity || '1',
-        category: itemCategory || null,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        name: trimmedName,
+        quantity: trimmedQuantity || '1',
+        category: trimmedCategory || null,
         purchased: false,
         createdAt: new Date().toISOString()
     };
@@ -681,57 +768,57 @@ async function handleAddItem(e) {
     shoppingList.push(newItem);
     
     // הוסף את המוצר לרשימת "מוצרים שהוספתי" ב-Firestore (גלובלי) אם לא קיים
-    const existingAdded = addedProducts.find(p => normalizeText(p.name) === normalizeText(itemName));
-    console.log('handleAddItem - בדיקת מוצר קיים:', itemName, 'קיים:', !!existingAdded);
+    const existingAdded = addedProducts.find(p => normalizeText(p.name) === normalizeText(trimmedName));
+    console.log('handleAddItem - בדיקת מוצר קיים:', trimmedName, 'קיים:', !!existingAdded);
     
     if (!existingAdded) {
-        console.log('מוצר לא קיים - מוסיף ל-Firestore:', itemName);
+        console.log('מוצר לא קיים - מוסיף ל-Firestore:', trimmedName);
         if (FirebaseManager && FirebaseManager.firestore) {
             try {
                 // שמור ב-Firestore
                 const productId = await FirebaseManager.addGlobalProduct({
-                    name: itemName,
-                    quantity: itemQuantity || '1',
-                    category: itemCategory || null
+                    name: trimmedName,
+                    quantity: trimmedQuantity || '1',
+                    category: trimmedCategory || null
                 });
                 console.log('addGlobalProduct החזיר:', productId);
                 
                 if (productId) {
                     // בדוק שוב אם המוצר כבר קיים ב-array (אם ההאזנה עדכנה בינתיים)
                     const alreadyInArray = addedProducts.find(p => 
-                        p.id === productId || normalizeText(p.name) === normalizeText(itemName)
+                        p.id === productId || normalizeText(p.name) === normalizeText(trimmedName)
                     );
                     
                     if (!alreadyInArray) {
                         // עדכן את ה-array המקומי מיד
                         addedProducts.push({
                             id: productId,
-                            name: itemName,
-                            quantity: itemQuantity || '1',
-                            category: itemCategory || null,
+                            name: trimmedName,
+                            quantity: trimmedQuantity || '1',
+                            category: trimmedCategory || null,
                             addedAt: new Date().toISOString()
                         });
-                        console.log('✅ מוצר נוסף ל-addedProducts מקומי:', itemName, 'ID:', productId);
+                        console.log('✅ מוצר נוסף ל-addedProducts מקומי:', trimmedName, 'ID:', productId);
                         console.log('סה"כ מוצרים ב-addedProducts:', addedProducts.length);
                     } else {
-                        console.log('⚠️ מוצר כבר קיים ב-addedProducts (ההאזנה עדכנה):', itemName);
+                        console.log('⚠️ מוצר כבר קיים ב-addedProducts (ההאזנה עדכנה):', trimmedName);
                     }
                 } else {
-                    console.error('❌ שגיאה: addGlobalProduct החזיר null עבור:', itemName);
+                    console.error('❌ שגיאה: addGlobalProduct החזיר null עבור:', trimmedName);
                     // Fallback - הוסף ל-localStorage גם אם Firestore נכשל
                     const fallbackId = Date.now().toString() + '-added';
                     const alreadyInFallback = addedProducts.find(p => 
-                        p.id === fallbackId || normalizeText(p.name) === normalizeText(itemName)
+                        p.id === fallbackId || normalizeText(p.name) === normalizeText(trimmedName)
                     );
                     if (!alreadyInFallback) {
                         addedProducts.push({
                             id: fallbackId,
-                            name: itemName,
-                            quantity: itemQuantity || '1',
-                            category: itemCategory || null,
+                            name: trimmedName,
+                            quantity: trimmedQuantity || '1',
+                            category: trimmedCategory || null,
                             addedAt: new Date().toISOString()
                         });
-                        console.log('✅ מוצר נוסף ל-addedProducts (fallback אחרי שגיאת Firestore):', itemName);
+                        console.log('✅ מוצר נוסף ל-addedProducts (fallback אחרי שגיאת Firestore):', trimmedName);
                         console.log('סה"כ מוצרים ב-addedProducts:', addedProducts.length);
                         // עדכן תצוגה מיד
                         renderAddedProducts();
@@ -743,7 +830,7 @@ async function handleAddItem(e) {
                             console.error('שגיאה בשמירה ל-localStorage:', e);
                         }
                     } else {
-                        console.log('⚠️ מוצר כבר קיים ב-addedProducts (fallback):', itemName);
+                        console.log('⚠️ מוצר כבר קיים ב-addedProducts (fallback):', trimmedName);
                     }
                 }
             } catch (error) {
@@ -751,27 +838,27 @@ async function handleAddItem(e) {
                 // Fallback - הוסף ל-localStorage
                 addedProducts.push({
                     id: Date.now().toString() + '-added',
-                    name: itemName,
-                    quantity: itemQuantity || '1',
-                    category: itemCategory || null,
+                    name: trimmedName,
+                    quantity: trimmedQuantity || '1',
+                    category: trimmedCategory || null,
                     addedAt: new Date().toISOString()
                 });
-                console.log('מוצר נוסף ל-addedProducts (fallback localStorage):', itemName);
+                console.log('מוצר נוסף ל-addedProducts (fallback localStorage):', trimmedName);
             }
         } else {
             // Fallback ל-localStorage אם אין Firestore
             console.log('אין Firestore - משתמש ב-localStorage');
             addedProducts.push({
                 id: Date.now().toString() + '-added',
-                name: itemName,
-                quantity: itemQuantity || '1',
-                category: itemCategory || null,
+                name: trimmedName,
+                quantity: trimmedQuantity || '1',
+                category: trimmedCategory || null,
                 addedAt: new Date().toISOString()
             });
-            console.log('✅ מוצר נוסף ל-addedProducts (localStorage):', itemName);
+            console.log('✅ מוצר נוסף ל-addedProducts (localStorage):', trimmedName);
         }
     } else {
-        console.log('ℹ️ מוצר כבר קיים ב-addedProducts:', itemName);
+        console.log('ℹ️ מוצר כבר קיים ב-addedProducts:', trimmedName);
     }
     
     saveToLocalStorage();
@@ -781,7 +868,7 @@ async function handleAddItem(e) {
         renderAddedProducts();
     }, 100);
     updateSmartSummary();
-    await syncSharedList();
+    debouncedSync();
     updateUrlWithListId();
     
     e.target.reset();
@@ -815,7 +902,7 @@ async function updateItemQuantity(itemId, newQuantity) {
         } else {
             renderList();
         }
-        await syncSharedList();
+        debouncedSync();
         hapticFeedback();
     }
 }
@@ -850,7 +937,7 @@ async function handleClearPurchased() {
         saveToLocalStorage();
         renderList();
         updateSmartSummary();
-        await syncSharedList();
+        debouncedSync();
     }
 }
 
@@ -877,7 +964,7 @@ async function handleSmartCleanup() {
         saveToLocalStorage();
         renderList();
         updateSmartSummary();
-        await syncSharedList();
+        debouncedSync();
         alert(`מוזגו ${mergeCount} קבוצות של כפילויות`);
         hapticFeedback();
     }
@@ -1034,7 +1121,7 @@ async function addRecurringItem(item) {
     renderList();
     updateSmartSummary();
     showRecurringSuggestions();
-    await syncSharedList();
+    debouncedSync();
     hapticFeedback();
 }
 
@@ -1060,7 +1147,7 @@ async function restoreFromHistory(historyId) {
         renderList();
         updateSmartSummary();
         switchTab('current');
-        await syncSharedList();
+        debouncedSync();
     }
 }
 
@@ -1198,10 +1285,12 @@ function renderCategoryBreakdown() {
     Object.entries(categories).forEach(([category, stats]) => {
         const div = document.createElement('div');
         div.className = 'category-breakdown-item';
-        div.innerHTML = `
-            <span>${category}</span>
-            <span>${stats.purchased}/${stats.total}</span>
-        `;
+        const categorySpan = document.createElement('span');
+        categorySpan.textContent = category;
+        const statsSpan = document.createElement('span');
+        statsSpan.textContent = `${stats.purchased}/${stats.total}`;
+        div.appendChild(categorySpan);
+        div.appendChild(statsSpan);
         breakdown.appendChild(div);
     });
 }
@@ -1340,16 +1429,37 @@ function renderAutocomplete(suggestions) {
         div.className = 'autocomplete-item';
         div.dataset.index = index;
         
-        div.innerHTML = `
-            <span class="autocomplete-item-icon">${suggestion.icon}</span>
-            <div class="autocomplete-item-text">
-                <div class="autocomplete-item-name">${suggestion.name}</div>
-                <div class="autocomplete-item-details">
-                    ${suggestion.quantity ? `<span>${suggestion.quantity}</span>` : ''}
-                    ${suggestion.category ? `<span class="autocomplete-category">${suggestion.category}</span>` : ''}
-                </div>
-            </div>
-        `;
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'autocomplete-item-icon';
+        iconSpan.textContent = suggestion.icon;
+        div.appendChild(iconSpan);
+        
+        const textDiv = document.createElement('div');
+        textDiv.className = 'autocomplete-item-text';
+        
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'autocomplete-item-name';
+        nameDiv.textContent = suggestion.name;
+        textDiv.appendChild(nameDiv);
+        
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'autocomplete-item-details';
+        
+        if (suggestion.quantity) {
+            const quantitySpan = document.createElement('span');
+            quantitySpan.textContent = suggestion.quantity;
+            detailsDiv.appendChild(quantitySpan);
+        }
+        
+        if (suggestion.category) {
+            const categorySpan = document.createElement('span');
+            categorySpan.className = 'autocomplete-category';
+            categorySpan.textContent = suggestion.category;
+            detailsDiv.appendChild(categorySpan);
+        }
+        
+        textDiv.appendChild(detailsDiv);
+        div.appendChild(textDiv);
         
         div.addEventListener('click', () => selectAutocompleteSuggestion(suggestion));
         
@@ -1461,7 +1571,9 @@ function renderList() {
         if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
-            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            const h3 = document.createElement('h3');
+            h3.textContent = category;
+            categoryHeader.appendChild(h3);
             shoppingListContainer.appendChild(categoryHeader);
             
             itemsByCategory[category].forEach(item => {
@@ -1476,7 +1588,9 @@ function renderList() {
         if (!CATEGORIES.includes(category)) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
-            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            const h3 = document.createElement('h3');
+            h3.textContent = category;
+            categoryHeader.appendChild(h3);
             shoppingListContainer.appendChild(categoryHeader);
             
             itemsByCategory[category].forEach(item => {
@@ -1565,7 +1679,7 @@ function createListItem(item) {
     // כפתור מחק - איקס אדום
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete';
-    deleteBtn.innerHTML = '✕';
+    deleteBtn.textContent = '✕';
     deleteBtn.addEventListener('click', () => deleteItem(item.id));
     deleteBtn.setAttribute('aria-label', `מחק ${item.name}`);
     
@@ -1615,7 +1729,7 @@ async function addAddedProductToList(product) {
     saveToLocalStorage();
     renderList();
     updateSmartSummary();
-    await syncSharedList();
+    debouncedSync();
     hapticFeedback();
 }
 
@@ -1743,11 +1857,19 @@ function setupAddedProductsListener() {
         // מיון ידני אם אין orderBy
         newAddedProducts.sort((a, b) => a.name.localeCompare(b.name, 'he'));
         
-        // עדכן תמיד - ההאזנה היא המקור האמת
-        addedProducts = newAddedProducts;
-        console.log('✅ האזנה: עודכן addedProducts array:', addedProducts.length, 'מוצרים');
-        // עדכן תצוגה
-        renderAddedProducts();
+        // בדוק אם יש שינוי לפני עדכון
+        const currentStr = JSON.stringify(addedProducts.sort((a, b) => a.name.localeCompare(b.name, 'he')));
+        const newStr = JSON.stringify(newAddedProducts);
+        
+        if (currentStr !== newStr) {
+            // עדכן תמיד - ההאזנה היא המקור האמת
+            addedProducts = newAddedProducts;
+            console.log('✅ האזנה: עודכן addedProducts array:', addedProducts.length, 'מוצרים');
+            // עדכן תצוגה
+            renderAddedProducts();
+        } else {
+            console.log('ℹ️ אין שינויים במוצרים שהוספתי');
+        }
     };
     
     // האזנה לכל השינויים ב-collection addedProducts
@@ -1817,10 +1939,12 @@ function renderAddedProducts() {
     
     // הצג לפי סדר הקטגוריות המוגדרות
     CATEGORIES.forEach(category => {
-        if (productsByCategory[category] && productsByCategory[category].length > 0) {
+            if (productsByCategory[category] && productsByCategory[category].length > 0) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
-            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            const h3 = document.createElement('h3');
+            h3.textContent = category;
+            categoryHeader.appendChild(h3);
             addedListContainer.appendChild(categoryHeader);
             
             productsByCategory[category].forEach(product => {
@@ -1835,7 +1959,9 @@ function renderAddedProducts() {
         if (!CATEGORIES.includes(category)) {
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
-            categoryHeader.innerHTML = `<h3>${category}</h3>`;
+            const h3 = document.createElement('h3');
+            h3.textContent = category;
+            categoryHeader.appendChild(h3);
             addedListContainer.appendChild(categoryHeader);
             
             productsByCategory[category].forEach(product => {
@@ -2138,7 +2264,7 @@ async function checkUrlForListId() {
         
         // יצירת הרשימה ב-Firebase אם Firebase זמין
         if (FirebaseManager && FirebaseManager.database) {
-            const currentList = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+            const currentList = safeJSONParse(localStorage.getItem('shoppingList'), []);
             await FirebaseManager.createList(sharedListId, {
                 items: currentList
             });
@@ -2147,38 +2273,60 @@ async function checkUrlForListId() {
     }
 }
 
+// Flags למניעת race conditions
+let isUpdatingFromRemote = false;
+let isSyncing = false;
+let syncTimeout = null;
+
 function setupSharing() {
     // תמיד ננסה להתחיל האזנה אם יש sharedListId
     if (sharedListId) {
         updateShareLink();
         // התחלת האזנה לעדכונים בזמן אמת
         if (FirebaseManager && FirebaseManager.database) {
-            console.log('מתחיל האזנה לרשימה:', sharedListId);
+            console.log('📡 מתחיל האזנה לרשימה:', sharedListId);
             FirebaseManager.subscribeToList(sharedListId, (data) => {
+                // מניעת loops - אם אנחנו מסנכרנים, אל תעדכן מהרחוק
+                if (isSyncing) {
+                    console.log('ℹ️ מתעלם מעדכון רחוק - סנכרון מקומי פעיל');
+                    return;
+                }
+                
                 if (data && data.items) {
-                    // עדכון הרשימה רק אם יש שינויים
-                    const currentItems = JSON.stringify(shoppingList);
-                    const newItems = JSON.stringify(data.items);
-                    
-                    if (currentItems !== newItems) {
-                        console.log('עדכון רשימה מ-Firebase:', data.items.length, 'פריטים');
-                        shoppingList = data.items.map(item => ({
-                            ...item,
-                            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
-                        }));
-                        saveToLocalStorage();
-                        renderList();
-                        updateSmartSummary();
-                        detectRecurringItems();
+                    isUpdatingFromRemote = true;
+                    try {
+                        // עדכון הרשימה רק אם יש שינויים
+                        const currentItems = JSON.stringify(shoppingList.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+                        const newItems = JSON.stringify(data.items.sort((a, b) => (a.id || '').localeCompare(b.id || '')));
+                        
+                        if (currentItems !== newItems) {
+                            console.log('📡 עדכון רשימה מ-Firebase:', data.items.length, 'פריטים');
+                            shoppingList = data.items.map(item => ({
+                                ...item,
+                                id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+                            }));
+                            saveToLocalStorage();
+                            renderList();
+                            updateSmartSummary();
+                            detectRecurringItems();
+                            console.log('✅ רשימה עודכנה בהצלחה');
+                        } else {
+                            console.log('ℹ️ אין שינויים ברשימה');
+                        }
+                    } finally {
+                        isUpdatingFromRemote = false;
                     }
+                } else {
+                    console.log('⚠️ אין items בנתונים מ-Firebase');
                 }
             });
+            console.log('✅ האזנה לרשימה הופעלה');
         } else {
-            console.warn('Firebase לא מוכן - לא ניתן להתחיל האזנה');
+            console.warn('⚠️ Firebase לא מוכן - לא ניתן להתחיל האזנה');
         }
     } else {
         // אם אין sharedListId, נצור אחד (אמור לקרות ב-checkUrlForListId, אבל למקרה שלא)
-        console.warn('אין sharedListId - השיתוף לא פעיל');
+        console.warn('⚠️ אין sharedListId - השיתוף לא פעיל');
     }
 }
 
@@ -2427,24 +2575,76 @@ async function loadSharedListFromFirebase() {
     }
 }
 
+// Flags למניעת race conditions
+let isUpdatingFromRemote = false;
+let isSyncing = false;
+let syncTimeout = null;
+
+// סנכרון רשימה משותפת ל-Firebase עם debouncing
+function debouncedSync() {
+    clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(() => {
+        syncSharedList();
+    }, CONSTANTS.SYNC_DEBOUNCE_MS);
+}
+
 // סנכרון רשימה משותפת ל-Firebase
 async function syncSharedList() {
+    // מניעת sync אם מעדכנים מהרחוק
+    if (isUpdatingFromRemote) {
+        console.log('ℹ️ מתעלם מסנכרון - עדכון רחוק פעיל');
+        return;
+    }
+    
+    // מניעת sync כפול
+    if (isSyncing) {
+        console.log('ℹ️ סנכרון כבר פעיל - מתעלם');
+        return;
+    }
+    
+    // תמיד ננסה ליצור sharedListId אם אין
     if (!sharedListId) {
-        console.log('אין sharedListId - לא מסנכרן');
+        sharedListId = 'list-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('sharedListId', sharedListId);
+        updateUrlWithListId();
+        console.log('📝 נוצר sharedListId חדש:', sharedListId);
+        
+        // צור רשימה ב-Firebase
+        if (FirebaseManager && FirebaseManager.database) {
+            const currentList = safeJSONParse(localStorage.getItem('shoppingList'), []);
+            await FirebaseManager.createList(sharedListId, {
+                items: currentList
+            });
+            console.log('✅ רשימה נוצרה ב-Firebase');
+            
+            // התחל האזנה
+            setupSharing();
+        }
         return;
     }
     
     if (!FirebaseManager || !FirebaseManager.database) {
-        console.warn('Firebase לא מוכן - לא ניתן לסנכרן');
+        console.warn('⚠️ Firebase לא מוכן - לא ניתן לסנכרן');
         return;
     }
     
-    console.log('מסנכרן רשימה ל-Firebase:', sharedListId, 'עם', shoppingList.length, 'פריטים');
-    const success = await FirebaseManager.updateList(sharedListId, shoppingList);
-    if (success) {
-        console.log('רשימה סונכרנה בהצלחה');
-    } else {
-        console.warn('שגיאה בסנכרון רשימה');
+    isSyncing = true;
+    try {
+        console.log('🔄 מסנכרן רשימה ל-Firebase:', sharedListId, 'עם', shoppingList.length, 'פריטים');
+        const success = await FirebaseManager.updateList(sharedListId, shoppingList);
+        if (success) {
+            console.log('✅ רשימה סונכרנה בהצלחה');
+        } else {
+            console.warn('❌ שגיאה בסנכרון רשימה');
+        }
+    } catch (error) {
+        console.error('שגיאה בסנכרון:', error);
+        // Add to offline queue on error
+        if (FirebaseManager) {
+            FirebaseManager.addToOfflineQueue(sharedListId, shoppingList);
+        }
+    } finally {
+        isSyncing = false;
     }
 }
 
@@ -2484,7 +2684,13 @@ function saveToLocalStorage() {
         localStorage.setItem('shoppingHistory', JSON.stringify(shoppingHistory));
         localStorage.setItem('recurringItems', JSON.stringify(recurringItems));
     } catch (error) {
-        alert('שגיאה בשמירת הנתונים. אנא נסה שוב.');
+        console.error('שגיאה בשמירת הנתונים:', error);
+        // Check if quota exceeded
+        if (error.name === 'QuotaExceededError') {
+            alert('אין מספיק מקום לשמירה. אנא מחק נתונים ישנים.');
+        } else {
+            alert('שגיאה בשמירת הנתונים. אנא נסה שוב.');
+        }
     }
 }
 
@@ -2492,9 +2698,9 @@ function loadFromLocalStorage() {
     try {
         const savedList = localStorage.getItem('shoppingList');
         if (savedList) {
-            shoppingList = JSON.parse(savedList);
+            shoppingList = safeJSONParse(savedList, []);
             shoppingList = shoppingList.filter(item => 
-                item && item.id && item.name
+                item && item.id && item.name && validateItemName(item.name)
             );
         }
         
@@ -2503,17 +2709,22 @@ function loadFromLocalStorage() {
         
         const savedHistory = localStorage.getItem('shoppingHistory');
         if (savedHistory) {
-            shoppingHistory = JSON.parse(savedHistory);
+            shoppingHistory = safeJSONParse(savedHistory, []);
             shoppingHistory = shoppingHistory.filter(entry => 
-                entry && entry.id && entry.date && entry.items
+                entry && entry.id && entry.date && entry.items && Array.isArray(entry.items)
             );
+            // Limit history size
+            if (shoppingHistory.length > CONSTANTS.MAX_HISTORY_ENTRIES) {
+                shoppingHistory = shoppingHistory.slice(0, CONSTANTS.MAX_HISTORY_ENTRIES);
+            }
         }
         
         const savedRecurring = localStorage.getItem('recurringItems');
         if (savedRecurring) {
-            recurringItems = JSON.parse(savedRecurring);
+            recurringItems = safeJSONParse(savedRecurring, []);
         }
     } catch (error) {
+        console.error('שגיאה בטעינת נתונים:', error);
         shoppingList = [];
         // addedProducts לא מתאפסים - הם גלובליים ונשמרים ב-Firestore
         shoppingHistory = [];
@@ -2576,15 +2787,18 @@ function handleSaveList() {
 
 // יצירת רשימה חדשה
 async function handleNewList() {
-    // אם יש פריטים ברשימה, שמור אותם להיסטוריה
+    // אם יש פריטים ברשימה, שמור אותם להיסטוריה ורשימות קיימות
     if (shoppingList.length > 0) {
-        const confirmMessage = `האם אתה בטוח שברצונך ליצור רשימה חדשה?\nהרשימה הנוכחית תישמר בהיסטוריה.`;
+        const confirmMessage = `האם אתה בטוח שברצונך ליצור רשימה חדשה?\nהרשימה הנוכחית תישמר בהיסטוריה וברשימות קיימות.`;
         if (!confirm(confirmMessage)) {
             return;
         }
         
         // שמור את הרשימה הנוכחית להיסטוריה
         saveCurrentListToHistory();
+        
+        // שמור את הרשימה הנוכחית לרשימות קיימות
+        await saveCurrentListToSavedLists();
     }
     
     // הפסק שיתוף אם יש
@@ -2626,6 +2840,356 @@ async function handleNewList() {
     }, 2000);
     
     hapticFeedback();
+}
+
+// Global error handlers
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+    // Show user-friendly message
+    const errorMsg = document.createElement('div');
+    errorMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #f44336; color: white; padding: 1rem; border-radius: 8px; z-index: 10000; max-width: 300px;';
+    errorMsg.textContent = 'אירעה שגיאה. אנא רענן את הדף.';
+    document.body.appendChild(errorMsg);
+    setTimeout(() => errorMsg.remove(), 5000);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+    event.preventDefault(); // Prevent default browser handling
+    // Handle gracefully
+    const errorMsg = document.createElement('div');
+    errorMsg.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #ff9800; color: white; padding: 1rem; border-radius: 8px; z-index: 10000; max-width: 300px;';
+    errorMsg.textContent = 'בעיה בחיבור לשרת. האפליקציה תעבוד במצב offline.';
+    document.body.appendChild(errorMsg);
+    setTimeout(() => errorMsg.remove(), 5000);
+});
+
+// שמירת רשימה נוכחית לרשימות קיימות
+async function saveCurrentListToSavedLists() {
+    if (shoppingList.length === 0) {
+        return;
+    }
+    
+    // שאל את המשתמש לשם הרשימה
+    const listName = prompt('הכנס שם לרשימה:', `רשימה ${new Date().toLocaleDateString('he-IL')}`);
+    if (!listName || !listName.trim()) {
+        return; // המשתמש ביטל
+    }
+    
+    // ולידציה של שם הרשימה
+    if (!validateListName(listName)) {
+        alert('שם הרשימה לא תקין. אנא הכנס שם תקין (עד 100 תווים).');
+        return;
+    }
+    
+    const trimmedListName = listName.trim();
+    
+    if (FirebaseManager && FirebaseManager.firestore) {
+        const listId = await FirebaseManager.saveList({
+            name: trimmedListName,
+            items: shoppingList,
+            sharedListId: sharedListId
+        });
+        
+        if (listId) {
+            console.log('✅ רשימה נשמרה לרשימות קיימות:', listId);
+        } else {
+            console.error('❌ שגיאה בשמירת רשימה לרשימות קיימות');
+        }
+    } else {
+        console.warn('⚠️ אין Firestore - לא ניתן לשמור רשימה קיימת');
+    }
+}
+
+// טעינת רשימות קיימות מ-Firestore
+async function loadSavedListsFromFirestore() {
+    console.log('🔄 טעינת רשימות קיימות...');
+    
+    if (FirebaseManager && FirebaseManager.firestore) {
+        try {
+            savedLists = await FirebaseManager.loadSavedLists();
+            console.log('✅ נטענו', savedLists.length, 'רשימות קיימות מ-Firestore');
+        } catch (error) {
+            console.error('❌ שגיאה בטעינת רשימות קיימות:', error);
+            savedLists = [];
+        }
+    } else {
+        console.log('⚠️ אין Firestore - אין רשימות קיימות');
+        savedLists = [];
+    }
+}
+
+// האזנה לעדכוני רשימות קיימות מ-Firestore בזמן אמת
+let savedListsListener = null;
+function setupSavedListsListener() {
+    if (!FirebaseManager || !FirebaseManager.firestore) {
+        return; // אין Firestore - אין האזנה
+    }
+    
+    // הסר האזנה קודמת אם קיימת
+    if (savedListsListener) {
+        savedListsListener();
+        savedListsListener = null;
+    }
+    
+    console.log('📡 מתחיל האזנה לעדכוני רשימות קיימות מ-Firestore');
+    
+    // פונקציה משותפת לעיבוד snapshot
+    const handleSavedListsSnapshot = (snapshot) => {
+        console.log('📡 האזנה: עדכון רשימות קיימות מ-Firestore:', snapshot.docs.length, 'רשימות');
+        
+        // עדכן את savedLists array
+        const newSavedLists = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name || 'רשימה ללא שם',
+                items: data.items || [],
+                createdAt: data.createdAt || new Date().toISOString(),
+                updatedAt: data.updatedAt || new Date().toISOString(),
+                sharedListId: data.sharedListId || null
+            };
+        });
+        
+        // מיון לפי תאריך עדכון (החדש ביותר ראשון)
+        newSavedLists.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        
+        // עדכן תמיד - ההאזנה היא המקור האמת
+        savedLists = newSavedLists;
+        console.log('✅ האזנה: עודכן savedLists array:', savedLists.length, 'רשימות');
+        // עדכן תצוגה
+        renderSavedLists();
+    };
+    
+    // האזנה לכל השינויים ב-collection savedLists
+    try {
+        savedListsListener = FirebaseManager.firestore.collection('savedLists')
+            .orderBy('updatedAt', 'desc')
+            .onSnapshot((snapshot) => {
+                handleSavedListsSnapshot(snapshot);
+            }, (error) => {
+                // אם orderBy נכשל, נסה בלי orderBy
+                if (error.code === 'failed-precondition') {
+                    console.warn('orderBy נכשל - מנסה בלי orderBy');
+                    savedListsListener = FirebaseManager.firestore.collection('savedLists')
+                        .onSnapshot((snapshot) => {
+                            handleSavedListsSnapshot(snapshot);
+                        }, (error) => {
+                            console.error('שגיאה בהאזנה לרשימות קיימות:', error);
+                        });
+                } else {
+                    console.error('שגיאה בהאזנה לרשימות קיימות:', error);
+                }
+            });
+    } catch (error) {
+        console.warn('שגיאה בהתחלת האזנה - מנסה בלי orderBy:', error);
+        savedListsListener = FirebaseManager.firestore.collection('savedLists')
+            .onSnapshot((snapshot) => {
+                handleSavedListsSnapshot(snapshot);
+            }, (error) => {
+                console.error('שגיאה בהאזנה לרשימות קיימות:', error);
+            });
+    }
+}
+
+// רינדור רשימות קיימות
+function renderSavedLists() {
+    if (!savedListsContainer) return;
+    
+    savedListsContainer.innerHTML = '';
+    
+    if (savedLists.length === 0) {
+        if (savedEmptyState) savedEmptyState.style.display = 'block';
+        return;
+    }
+    
+    if (savedEmptyState) savedEmptyState.style.display = 'none';
+    
+    savedLists.forEach(list => {
+        const listItem = createSavedListItem(list);
+        savedListsContainer.appendChild(listItem);
+    });
+}
+
+// יצירת אלמנט רשימה קיימת
+function createSavedListItem(list) {
+    const li = document.createElement('li');
+    li.className = 'saved-list-item';
+    li.style.cssText = `
+        background: var(--bg-primary);
+        border: 2px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    `;
+    
+    li.addEventListener('mouseenter', () => {
+        li.style.backgroundColor = 'var(--bg-secondary)';
+        li.style.transform = 'translateY(-2px)';
+        li.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+    });
+    
+    li.addEventListener('mouseleave', () => {
+        li.style.backgroundColor = 'var(--bg-primary)';
+        li.style.transform = 'translateY(0)';
+        li.style.boxShadow = 'none';
+    });
+    
+    const header = document.createElement('div');
+    header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;';
+    
+    const name = document.createElement('h3');
+    name.textContent = list.name;
+    name.style.cssText = 'margin: 0; font-size: 1.2rem; color: var(--text-primary);';
+    
+    const date = new Date(list.createdAt);
+    const dateStr = date.toLocaleDateString('he-IL', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+    
+    const dateEl = document.createElement('span');
+    dateEl.textContent = dateStr;
+    dateEl.style.cssText = 'font-size: 0.9rem; color: var(--text-secondary);';
+    
+    header.appendChild(name);
+    header.appendChild(dateEl);
+    
+    const info = document.createElement('div');
+    info.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;';
+    
+    const itemsCount = document.createElement('span');
+    itemsCount.textContent = `${list.items.length} פריטים`;
+    itemsCount.style.cssText = 'font-size: 0.9rem; color: var(--text-secondary);';
+    
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display: flex; gap: 0.5rem;';
+    
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'btn btn-primary';
+    loadBtn.textContent = 'טען רשימה';
+    loadBtn.style.cssText = 'padding: 0.4rem 0.8rem; font-size: 0.9rem;';
+    loadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadSavedList(list.id);
+    });
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger';
+    deleteBtn.textContent = 'מחק';
+    deleteBtn.style.cssText = 'padding: 0.4rem 0.8rem; font-size: 0.9rem;';
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteSavedList(list.id);
+    });
+    
+    actions.appendChild(loadBtn);
+    actions.appendChild(deleteBtn);
+    
+    info.appendChild(itemsCount);
+    info.appendChild(actions);
+    
+    li.appendChild(header);
+    li.appendChild(info);
+    
+    // לחיצה על הרשימה - טען אותה
+    li.addEventListener('click', () => {
+        loadSavedList(list.id);
+    });
+    
+    return li;
+}
+
+// טעינת רשימה קיימת
+async function loadSavedList(listId) {
+    const list = savedLists.find(l => l.id === listId);
+    if (!list) {
+        alert('רשימה לא נמצאה');
+        return;
+    }
+    
+    // שאל את המשתמש אם הוא רוצה להחליף את הרשימה הנוכחית
+    if (shoppingList.length > 0) {
+        if (!confirm('האם אתה בטוח שברצונך לטעון רשימה זו? הרשימה הנוכחית תוחלף.')) {
+            return;
+        }
+    }
+    
+    // שמור את הרשימה הנוכחית לרשימות קיימות אם יש פריטים
+    if (shoppingList.length > 0) {
+        await saveCurrentListToSavedLists();
+    }
+    
+    // טען את הרשימה
+    shoppingList = list.items.map(item => ({
+        ...item,
+        id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+    }));
+    
+    // עדכן sharedListId אם יש
+    if (list.sharedListId) {
+        sharedListId = list.sharedListId;
+        localStorage.setItem('sharedListId', sharedListId);
+        updateUrlWithListId();
+        setupSharing();
+    } else {
+        // צור sharedListId חדש
+        sharedListId = 'list-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('sharedListId', sharedListId);
+        updateUrlWithListId();
+        
+        // עדכן את הרשימה ב-Firestore
+        if (FirebaseManager && FirebaseManager.firestore) {
+            await FirebaseManager.updateSavedList(listId, {
+                name: list.name,
+                items: shoppingList,
+                sharedListId: sharedListId
+            });
+        }
+        
+        // צור רשימה ב-Firebase
+        if (FirebaseManager && FirebaseManager.database) {
+            await FirebaseManager.createList(sharedListId, {
+                items: shoppingList
+            });
+            setupSharing();
+        }
+    }
+    
+    saveToLocalStorage();
+    renderList();
+    updateSmartSummary();
+    switchTab('current');
+    
+    // עדכן את הרשימה ב-Firebase
+    debouncedSync();
+    
+    hapticFeedback();
+    alert(`רשימה "${list.name}" נטענה בהצלחה!`);
+}
+
+// מחיקת רשימה קיימת
+async function deleteSavedList(listId) {
+    if (!confirm('האם אתה בטוח שברצונך למחוק רשימה זו?')) {
+        return;
+    }
+    
+    if (FirebaseManager && FirebaseManager.firestore) {
+        const success = await FirebaseManager.deleteSavedList(listId);
+        if (success) {
+            console.log('✅ רשימה נמחקה');
+            hapticFeedback();
+        } else {
+            alert('שגיאה במחיקת הרשימה');
+        }
+    } else {
+        alert('אין חיבור ל-Firestore - לא ניתן למחוק');
+    }
 }
 
 // ייצוא רשימת קניות
@@ -2813,11 +3377,24 @@ function showShoppingSummary() {
         purchased.forEach(item => {
             const li = document.createElement('li');
             li.className = 'summary-item purchased';
-            li.innerHTML = `
-                <span class="summary-item-icon">✓</span>
-                <span class="summary-item-name">${item.name}</span>
-                ${item.quantity ? `<span class="summary-item-quantity">${item.quantity}</span>` : ''}
-            `;
+            
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'summary-item-icon';
+            iconSpan.textContent = '✓';
+            li.appendChild(iconSpan);
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'summary-item-name';
+            nameSpan.textContent = item.name;
+            li.appendChild(nameSpan);
+            
+            if (item.quantity) {
+                const quantitySpan = document.createElement('span');
+                quantitySpan.className = 'summary-item-quantity';
+                quantitySpan.textContent = item.quantity;
+                li.appendChild(quantitySpan);
+            }
+            
             purchasedList.appendChild(li);
         });
     }
@@ -2834,11 +3411,24 @@ function showShoppingSummary() {
         notPurchased.forEach(item => {
             const li = document.createElement('li');
             li.className = 'summary-item not-purchased';
-            li.innerHTML = `
-                <span class="summary-item-icon">✗</span>
-                <span class="summary-item-name">${item.name}</span>
-                ${item.quantity ? `<span class="summary-item-quantity">${item.quantity}</span>` : ''}
-            `;
+            
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'summary-item-icon';
+            iconSpan.textContent = '✗';
+            li.appendChild(iconSpan);
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'summary-item-name';
+            nameSpan.textContent = item.name;
+            li.appendChild(nameSpan);
+            
+            if (item.quantity) {
+                const quantitySpan = document.createElement('span');
+                quantitySpan.className = 'summary-item-quantity';
+                quantitySpan.textContent = item.quantity;
+                li.appendChild(quantitySpan);
+            }
+            
             notPurchasedList.appendChild(li);
         });
     }
@@ -2938,7 +3528,7 @@ async function finishShoppingSession() {
     switchTab('current');
     
     // סנכרון עם Firebase אם יש רשימה משותפת
-    await syncSharedList();
+    debouncedSync();
     
     // משוב למשתמש
     hapticFeedback();

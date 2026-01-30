@@ -270,6 +270,80 @@ const FirebaseManager = {
         }
     },
 
+    // ---------- רשימות קיימות (Firestore collection: savedLists) ----------
+    // רשימות קיימות שכל המשתמשים רואים - כל רשימה עם שם, תאריך ופריטים
+
+    /** טעינת כל הרשימות הקיימות */
+    async loadSavedLists() {
+        if (!this.firestore) return [];
+        try {
+            const snapshot = await this.firestore.collection('savedLists')
+                .orderBy('createdAt', 'desc')
+                .get();
+            return snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    name: data.name || 'רשימה ללא שם',
+                    items: data.items || [],
+                    createdAt: data.createdAt || new Date().toISOString(),
+                    updatedAt: data.updatedAt || new Date().toISOString(),
+                    sharedListId: data.sharedListId || null
+                };
+            });
+        } catch (error) {
+            console.error('שגיאה בטעינת רשימות קיימות:', error);
+            return [];
+        }
+    },
+
+    /** שמירת רשימה קיימת */
+    async saveList(listData) {
+        if (!this.firestore || !listData) return null;
+        try {
+            const docRef = await this.firestore.collection('savedLists').add({
+                name: listData.name || 'רשימה ללא שם',
+                items: listData.items || [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                sharedListId: listData.sharedListId || null
+            });
+            return docRef.id;
+        } catch (error) {
+            console.error('שגיאה בשמירת רשימה קיימת:', error);
+            return null;
+        }
+    },
+
+    /** עדכון רשימה קיימת */
+    async updateSavedList(listId, listData) {
+        if (!this.firestore || !listId || !listData) return false;
+        try {
+            await this.firestore.collection('savedLists').doc(listId).update({
+                name: listData.name || 'רשימה ללא שם',
+                items: listData.items || [],
+                updatedAt: new Date().toISOString(),
+                sharedListId: listData.sharedListId || null
+            });
+            return true;
+        } catch (error) {
+            console.error('שגיאה בעדכון רשימה קיימת:', error);
+            return false;
+        }
+    },
+
+    /** מחיקת רשימה קיימת */
+    async deleteSavedList(listId) {
+        if (!this.firestore || !listId) return false;
+        try {
+            await this.firestore.collection('savedLists').doc(listId).delete();
+            return true;
+        } catch (error) {
+            console.error('שגיאה במחיקת רשימה קיימת:', error);
+            return false;
+        }
+    },
+
     /** מחיקת מוצר מהרשימה הגלובלית */
     async deleteGlobalProduct(productId) {
         if (!this.firestore || !productId) return false;
@@ -417,19 +491,42 @@ const FirebaseManager = {
         const queueItem = {
             listId: listId,
             items: items,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            retryCount: 0
         };
 
         // שמירה ב-localStorage
         try {
             const queue = JSON.parse(localStorage.getItem('firebase_offline_queue') || '[]');
-            queue.push(queueItem);
-            // שמירת רק 10 השינויים האחרונים
-            const recentQueue = queue.slice(-10);
+            
+            // Remove expired items (older than 7 days)
+            const now = Date.now();
+            const MAX_QUEUE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+            const validQueue = queue.filter(item => 
+                (now - item.timestamp) < MAX_QUEUE_AGE_MS
+            );
+            
+            // Remove duplicates (same listId) - keep only the latest
+            const filtered = validQueue.filter(item => item.listId !== listId);
+            filtered.push(queueItem);
+            
+            // Keep only recent items (sorted by timestamp, newest first)
+            const MAX_QUEUE_SIZE = 10;
+            const recentQueue = filtered
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, MAX_QUEUE_SIZE);
+                
             localStorage.setItem('firebase_offline_queue', JSON.stringify(recentQueue));
             this.offlineQueue = recentQueue;
         } catch (error) {
             console.error('שגיאה בשמירת תור offline:', error);
+            // Clear corrupted queue
+            try {
+                localStorage.removeItem('firebase_offline_queue');
+                this.offlineQueue = [];
+            } catch (e) {
+                console.error('שגיאה בניקוי תור offline:', e);
+            }
         }
     },
 
