@@ -3417,9 +3417,16 @@ async function loadSavedList(listId) {
         }
     }
     
-    // שמור את הרשימה הנוכחית לרשימות קיימות אם יש פריטים
-    if (shoppingList.length > 0) {
-        await saveCurrentListToSavedLists();
+    // שמור את הרשימה הנוכחית לרשימות קיימות אם יש פריטים ושם רשימה
+    // (רק אם יש שם רשימה - לא נשאל שם חדש)
+    if (shoppingList.length > 0 && currentListName) {
+        // שמור את הרשימה הנוכחית עם השם הקיים (ללא prompt)
+        try {
+            await autoSaveListToSavedLists();
+        } catch (error) {
+            console.warn('שגיאה בשמירת הרשימה הנוכחית:', error);
+            // המשך - זה לא קריטי
+        }
     }
     
     // טען את הרשימה
@@ -3427,6 +3434,11 @@ async function loadSavedList(listId) {
         ...item,
         id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
     }));
+    
+    // עדכן את שם ותאריך הרשימה מהרשימה שנטענה
+    currentListName = list.name;
+    currentListCreatedAt = list.createdAt || new Date().toISOString();
+    currentSavedListId = list.id;
     
     // עדכן sharedListId אם יש
     if (list.sharedListId) {
@@ -3440,27 +3452,42 @@ async function loadSavedList(listId) {
         localStorage.setItem('sharedListId', sharedListId);
         updateUrlWithListId();
         
-        // עדכן את הרשימה ב-Firestore
+        // עדכן את הרשימה ב-Firestore עם sharedListId החדש
         if (FirebaseManager && FirebaseManager.firestore) {
-            await FirebaseManager.updateSavedList(listId, {
-                name: list.name,
-                items: shoppingList,
-                sharedListId: sharedListId
-            });
+            try {
+                await FirebaseManager.updateSavedList(listId, {
+                    name: list.name,
+                    items: shoppingList,
+                    sharedListId: sharedListId,
+                    createdAt: currentListCreatedAt
+                });
+            } catch (error) {
+                console.warn('שגיאה בעדכון sharedListId ב-Firestore:', error);
+            }
         }
         
         // צור רשימה ב-Firebase
         if (FirebaseManager && FirebaseManager.database) {
-            await FirebaseManager.createList(sharedListId, {
-                items: shoppingList
-            });
-            setupSharing();
+            try {
+                await FirebaseManager.createList(sharedListId, {
+                    items: shoppingList,
+                    name: currentListName,
+                    createdAt: currentListCreatedAt
+                });
+                setupSharing();
+            } catch (error) {
+                console.warn('שגיאה ביצירת רשימה ב-Firebase:', error);
+            }
         }
     }
     
     saveToLocalStorage();
+    updateListNameDisplay();
     renderList();
+    renderAddedProducts();
+    renderHistory();
     updateSmartSummary();
+    detectRecurringItems();
     switchTab('current');
     
     // עדכן את הרשימה ב-Firebase
