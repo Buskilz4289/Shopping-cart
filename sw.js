@@ -125,24 +125,43 @@ async function cacheFirst(request) {
 
 // אסטרטגיית Network First - רשת קודם
 async function networkFirst(request) {
+  // Cache API תומך רק ב-GET requests
+  // אל תנסה לשמור בקש cache בקשות POST, PUT, DELETE וכו'
+  if (request.method !== 'GET') {
+    // עבור בקשות שאינן GET, פשוט נסה מהרשת
+    try {
+      return await fetch(request);
+    } catch (error) {
+      console.log('[Service Worker] שגיאה בבקשה:', request.method, request.url);
+      throw error;
+    }
+  }
+  
   try {
     // נסה מהרשת קודם
     const networkResponse = await fetch(request);
     
-    // שמירה במטמון אם הצליח
-    if (networkResponse.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, networkResponse.clone());
+    // שמירה במטמון אם הצליח (רק GET requests)
+    if (networkResponse.ok && request.method === 'GET') {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        await cache.put(request, networkResponse.clone());
+      } catch (cacheError) {
+        // אם יש שגיאה בשמירה במטמון, המשך בכל זאת
+        console.log('[Service Worker] לא ניתן לשמור במטמון:', cacheError);
+      }
     }
     
     return networkResponse;
   } catch (error) {
     console.log('[Service Worker] אין חיבור לרשת, מנסה מהמטמון...');
     
-    // אם אין חיבור, נסה מהמטמון
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
+    // אם אין חיבור, נסה מהמטמון (רק GET requests)
+    if (request.method === 'GET') {
+      const cachedResponse = await caches.match(request);
+      if (cachedResponse) {
+        return cachedResponse;
+      }
     }
     
     // אם זה דף HTML, החזר את index.html
