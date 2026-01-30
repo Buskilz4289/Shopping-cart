@@ -1595,15 +1595,25 @@ function selectAutocompleteSuggestion(suggestion) {
 
 // רינדור רשימת הקניות – מכבד hidePurchasedInView (סינון בתצוגה בלבד)
 function renderList() {
+    console.log('🎨 renderList() נקרא, shoppingList.length:', shoppingList.length);
+    
+    if (!shoppingListContainer) {
+        console.error('❌ shoppingListContainer לא נמצא!');
+        return;
+    }
+    
     const itemsToRender = hidePurchasedInView
         ? shoppingList.filter(item => !item.purchased)
         : shoppingList;
 
+    console.log('📋 פריטים להצגה:', itemsToRender.length, '(hidePurchasedInView:', hidePurchasedInView, ')');
+
     shoppingListContainer.innerHTML = '';
 
     if (itemsToRender.length === 0) {
-        emptyState.style.display = 'block';
-        clearPurchasedBtn.style.display = 'none';
+        console.log('ℹ️ אין פריטים להצגה - מציג emptyState');
+        if (emptyState) emptyState.style.display = 'block';
+        if (clearPurchasedBtn) clearPurchasedBtn.style.display = 'none';
         updateShowPurchasedButton();
         return;
     }
@@ -1644,9 +1654,12 @@ function renderList() {
         return a.name.localeCompare(b.name, 'he');
     });
     
+    console.log('📂 קטגוריות:', Object.keys(itemsByCategory).length, 'פריטים ללא קטגוריה:', itemsWithoutCategory.length);
+    
     // הצג לפי סדר הקטגוריות המוגדרות
     CATEGORIES.forEach(category => {
         if (itemsByCategory[category] && itemsByCategory[category].length > 0) {
+            console.log(`  📁 קטגוריה "${category}":`, itemsByCategory[category].length, 'פריטים');
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
             const h3 = document.createElement('h3');
@@ -1656,7 +1669,11 @@ function renderList() {
             
             itemsByCategory[category].forEach(item => {
                 const listItem = createListItem(item);
-                shoppingListContainer.appendChild(listItem);
+                if (listItem) {
+                    shoppingListContainer.appendChild(listItem);
+                } else {
+                    console.error('❌ createListItem החזיר null עבור:', item);
+                }
             });
         }
     });
@@ -1664,6 +1681,7 @@ function renderList() {
     // הצג קטגוריות אחרות שלא מוגדרות
     Object.keys(itemsByCategory).forEach(category => {
         if (!CATEGORIES.includes(category)) {
+            console.log(`  📁 קטגוריה מותאמת אישית "${category}":`, itemsByCategory[category].length, 'פריטים');
             const categoryHeader = document.createElement('li');
             categoryHeader.className = 'category-header';
             const h3 = document.createElement('h3');
@@ -1673,18 +1691,29 @@ function renderList() {
             
             itemsByCategory[category].forEach(item => {
                 const listItem = createListItem(item);
-                shoppingListContainer.appendChild(listItem);
+                if (listItem) {
+                    shoppingListContainer.appendChild(listItem);
+                } else {
+                    console.error('❌ createListItem החזיר null עבור:', item);
+                }
             });
         }
     });
     
     // הצג פריטים ללא קטגוריה
     if (itemsWithoutCategory.length > 0) {
+        console.log('  📦 פריטים ללא קטגוריה:', itemsWithoutCategory.length);
         itemsWithoutCategory.forEach(item => {
             const listItem = createListItem(item);
-            shoppingListContainer.appendChild(listItem);
+            if (listItem) {
+                shoppingListContainer.appendChild(listItem);
+            } else {
+                console.error('❌ createListItem החזיר null עבור:', item);
+            }
         });
     }
+    
+    console.log('✅ renderList() הושלם, מספר אלמנטים ב-shoppingListContainer:', shoppingListContainer.children.length);
 }
 
 // תצוגת רשימת הקניות (API – מכבדת UI state כולל hidePurchasedInView)
@@ -3428,11 +3457,20 @@ function createSavedListItem(list) {
 
 // טעינת רשימה קיימת
 async function loadSavedList(listId) {
+    console.log('🔄 טוען רשימה:', listId);
     const list = savedLists.find(l => l.id === listId);
     if (!list) {
+        console.error('❌ רשימה לא נמצאה:', listId);
         alert('רשימה לא נמצאה');
         return;
     }
+    
+    console.log('📋 פרטי הרשימה:', {
+        id: list.id,
+        name: list.name,
+        itemsCount: list.items?.length || 0,
+        items: list.items
+    });
     
     // שאל את המשתמש אם הוא רוצה להחליף את הרשימה הנוכחית
     if (shoppingList.length > 0) {
@@ -3454,10 +3492,23 @@ async function loadSavedList(listId) {
     }
     
     // טען את הרשימה
-    shoppingList = list.items.map(item => ({
-        ...item,
-        id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
-    }));
+    if (!list.items || !Array.isArray(list.items)) {
+        console.error('❌ הרשימה לא מכילה פריטים תקינים:', list);
+        alert('הרשימה ריקה או פגומה');
+        return;
+    }
+    
+    console.log('📦 טוען', list.items.length, 'פריטים מהרשימה');
+    shoppingList = list.items.map((item, index) => {
+        const newItem = {
+            ...item,
+            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+        };
+        console.log(`  פריט ${index + 1}:`, newItem.name || newItem.id);
+        return newItem;
+    });
+    
+    console.log('✅ shoppingList עודכן:', shoppingList.length, 'פריטים');
     
     // עדכן את שם ותאריך הרשימה מהרשימה שנטענה
     currentListName = list.name;
@@ -3505,19 +3556,27 @@ async function loadSavedList(listId) {
         }
     }
     
+    console.log('💾 שומר ל-localStorage...');
     saveToLocalStorage();
+    
+    console.log('🎨 מעדכן תצוגה...');
     updateListNameDisplay();
+    console.log('📋 קורא ל-renderList() עם', shoppingList.length, 'פריטים');
     renderList();
     renderAddedProducts();
     renderHistory();
     updateSmartSummary();
     detectRecurringItems();
+    
+    console.log('🔄 מעבר לטאב "הרשימה שלי"...');
     switchTab('current');
     
     // עדכן את הרשימה ב-Firebase
+    console.log('🔄 מסנכרן עם Firebase...');
     debouncedSync();
     
     hapticFeedback();
+    console.log('✅ רשימה נטענה בהצלחה!');
     alert(`רשימה "${list.name}" נטענה בהצלחה!`);
 }
 
