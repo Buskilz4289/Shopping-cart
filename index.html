@@ -162,7 +162,15 @@
             <!-- Current Shopping list -->
             <section id="currentTab" class="tab-content active">
                 <div class="list-header">
-                    <h2>הרשימה שלי</h2>
+                    <div class="list-title-section">
+                        <h2 id="listTitle" class="list-title">הרשימה שלי</h2>
+                        <button id="editListNameBtn" class="btn-icon-small" aria-label="ערוך שם רשימה" title="ערוך שם רשימה" style="display: none;">
+                            ✏️
+                        </button>
+                    </div>
+                    <div id="listDateInfo" class="list-date-info" style="display: none;">
+                        <span id="listCreatedDate"></span>
+                    </div>
                     <div class="list-actions">
                         <button id="newListBtn" class="btn btn-primary btn-small">✨ רשימה חדשה</button>
                         <button id="saveListBtn" class="btn btn-primary btn-small">💾 שמור רשימה</button>

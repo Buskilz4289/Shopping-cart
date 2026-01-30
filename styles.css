@@ -1184,16 +1184,35 @@ input[type="text"]:focus {
 
 .list-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.75rem;
     margin-bottom: 1.5rem;
-    flex-wrap: wrap;
-    gap: 1rem;
 }
 
-.list-header h2 {
+.list-title-section {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.list-title {
     font-size: 1.5rem;
     color: var(--text-primary);
+    margin: 0;
+    flex: 1;
+}
+
+.list-date-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: -0.5rem;
+}
+
+.list-header .list-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
 }
 
 /* Empty State */

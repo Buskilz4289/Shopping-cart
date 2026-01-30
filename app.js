@@ -8,6 +8,8 @@ let addedProducts = [];       // מוצרים שהוספתי - כל מוצר ש�
 let shoppingHistory = [];
 let recurringItems = [];
 let sharedListId = null;
+let currentListName = null;   // שם הרשימה הנוכחית
+let currentListCreatedAt = null;  // תאריך יצירת הרשימה הנוכחית
 
 // UI state – ניווט ומצב תצוגה (לא נשמר ב-Firestore)
 let isShoppingMode = false;
@@ -122,14 +124,42 @@ const shareListBtn = document.getElementById('shareListBtn');
 const darkModeToggle = document.getElementById('darkModeToggle');
 const shoppingModeToggle = document.getElementById('shoppingModeToggle');
 const exitShoppingModeBtn = document.getElementById('exitShoppingMode');
-const tabButtons = document.querySelectorAll('.tab-btn');
-const tabContents = document.querySelectorAll('.tab-content');
+let tabButtons = null;
+let tabContents = null;
+
+// אתחול אלמנטי DOM לאחר טעינת הדף
+function initializeDOMElements() {
+    tabButtons = document.querySelectorAll('.tab-btn');
+    tabContents = document.querySelectorAll('.tab-content');
+    
+    console.log('אתחול אלמנטי DOM:', {
+        tabButtons: tabButtons ? tabButtons.length : 0,
+        tabContents: tabContents ? tabContents.length : 0
+    });
+    
+    if (!tabButtons || tabButtons.length === 0) {
+        console.error('לא נמצאו כפתורי טאבים');
+    }
+    if (!tabContents || tabContents.length === 0) {
+        console.error('לא נמצאו תוכן טאבים');
+    }
+    
+    // ודא שהטאב הראשוני מוצג
+    const currentTab = document.getElementById('currentTab');
+    if (currentTab) {
+        currentTab.style.display = 'block';
+        currentTab.classList.add('active');
+    }
+}
 const autocompleteDropdown = document.getElementById('autocompleteDropdown');
 const recurringSuggestions = document.getElementById('recurringSuggestions');
 const sharingSection = document.getElementById('sharingSection');
 
 // אתחול האפליקציה
 document.addEventListener('DOMContentLoaded', async () => {
+    // אתחול אלמנטי DOM קודם כל
+    initializeDOMElements();
+    
     // אתחול Firebase קודם כל
     if (FirebaseManager && FirebaseManager.init()) {
         console.log('Firebase אותחל בהצלחה');
@@ -168,8 +198,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadTheme();
     checkAndSaveHistory();
     
+    // עדכן תצוגת שם ותאריך רשימה
+    updateListNameDisplay();
+    
     // הגדר שיתוף - תמיד ננסה להתחיל האזנה אם יש sharedListId
     setupSharing();
+    
+    // ודא שהטאב הראשוני מוצג
+    if (currentView === 'current' || !currentView) {
+        switchTab('current');
+    }
     
     // אם אין sharedListId, צור אחד אוטומטית והתחל האזנה
     if (!sharedListId) {
@@ -399,9 +437,44 @@ function setupEventListeners() {
         exportListBtn.addEventListener('click', handleExportList);
     }
     
-    tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    // עדכן את tabButtons ו-tabContents לפני הוספת listeners
+    tabButtons = document.querySelectorAll('.tab-btn');
+    tabContents = document.querySelectorAll('.tab-content');
+    
+    console.log('setupEventListeners - מצא:', {
+        tabButtons: tabButtons ? tabButtons.length : 0,
+        tabContents: tabContents ? tabContents.length : 0
     });
+    
+    if (tabButtons && tabButtons.length > 0) {
+        tabButtons.forEach((btn, index) => {
+            console.log(`כפתור ${index}:`, btn.dataset.tab, btn.textContent);
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const tabName = btn.dataset.tab;
+                console.log('לחיצה על טאב:', tabName, 'מהכפתור:', btn);
+                switchTab(tabName);
+            });
+        });
+        console.log('✅ הוספו event listeners ל-', tabButtons.length, 'כפתורים');
+    } else {
+        console.error('❌ לא נמצאו כפתורי טאבים - לא ניתן להוסיף event listeners');
+        // נסה שוב אחרי זמן קצר
+        setTimeout(() => {
+            const retryButtons = document.querySelectorAll('.tab-btn');
+            if (retryButtons && retryButtons.length > 0) {
+                console.log('נסיון חוזר - נמצאו', retryButtons.length, 'כפתורים');
+                retryButtons.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        switchTab(btn.dataset.tab);
+                    });
+                });
+            }
+        }, 500);
+    }
 
     // שיתוף
     document.getElementById('copyShareLink').addEventListener('click', copyShareLink);
@@ -425,29 +498,57 @@ function setupEventListeners() {
     if (closeSummaryBtn) {
         closeSummaryBtn.addEventListener('click', hideShoppingSummary);
     }
+    
+    // כפתור עריכת שם רשימה
+    const editListNameBtn = document.getElementById('editListNameBtn');
+    if (editListNameBtn) {
+        editListNameBtn.addEventListener('click', editListName);
+    }
 }
 
 // החלפת טאב – ניווט ידני בלבד (UI state)
 function switchTab(tabName) {
+    console.log('switchTab נקרא עם:', tabName, 'isShoppingMode:', isShoppingMode);
+    
     if (isShoppingMode) {
+        console.log('מתעלם - במצב קניות');
         return;
     }
 
     currentView = tabName;
 
-    tabButtons.forEach(btn => btn.classList.remove('active'));
-    tabContents.forEach(content => {
-        content.classList.remove('active');
-        content.style.display = 'none';
-    });
+    // עדכן כפתורים - תמיד נסה למצוא אותם מחדש
+    const allTabButtons = document.querySelectorAll('.tab-btn');
+    if (allTabButtons && allTabButtons.length > 0) {
+        allTabButtons.forEach(btn => btn.classList.remove('active'));
+    }
+    
+    // עדכן תוכן טאבים - תמיד נסה למצוא אותם מחדש
+    const allTabContents = document.querySelectorAll('.tab-content');
+    if (allTabContents && allTabContents.length > 0) {
+        allTabContents.forEach(content => {
+            content.classList.remove('active');
+            content.style.display = 'none';
+        });
+    }
 
     const selectedBtn = document.querySelector(`[data-tab="${tabName}"]`);
     const selectedContent = document.getElementById(`${tabName}Tab`);
+
+    console.log('מציאת אלמנטים:', {
+        tabName,
+        selectedBtn: !!selectedBtn,
+        selectedContent: !!selectedContent,
+        selectedBtnElement: selectedBtn,
+        selectedContentElement: selectedContent
+    });
 
     if (selectedBtn && selectedContent) {
         selectedBtn.classList.add('active');
         selectedContent.classList.add('active');
         selectedContent.style.display = 'block';
+        
+        console.log('עדכון טאב:', tabName, 'מוצג:', selectedContent.style.display);
         
         // עדכן את התצוגה לפי הטאב שנבחר
         if (tabName === 'added') {
@@ -459,6 +560,15 @@ function switchTab(tabName) {
         } else if (tabName === 'saved') {
             renderSavedLists();
         }
+    } else {
+        console.error('שגיאה במיקום טאב:', {
+            tabName,
+            selectedBtn: !!selectedBtn,
+            selectedContent: !!selectedContent,
+            allTabs: document.querySelectorAll('.tab-content').length,
+            allButtons: document.querySelectorAll('.tab-btn').length,
+            allTabIds: Array.from(document.querySelectorAll('.tab-content')).map(el => el.id)
+        });
     }
 }
 
@@ -2265,9 +2375,20 @@ async function checkUrlForListId() {
         // יצירת הרשימה ב-Firebase אם Firebase זמין
         if (FirebaseManager && FirebaseManager.database) {
             const currentList = safeJSONParse(localStorage.getItem('shoppingList'), []);
+            // אם אין שם רשימה, צור אחד אוטומטית
+            if (!currentListName) {
+                currentListName = `רשימה ${new Date().toLocaleDateString('he-IL')}`;
+            }
+            if (!currentListCreatedAt) {
+                currentListCreatedAt = new Date().toISOString();
+            }
             await FirebaseManager.createList(sharedListId, {
-                items: currentList
+                items: currentList,
+                name: currentListName,
+                createdAt: currentListCreatedAt
             });
+            saveToLocalStorage();
+            updateListNameDisplay();
             console.log('רשימה משותפת נוצרה אוטומטית:', sharedListId);
         }
     }
@@ -2305,9 +2426,23 @@ function setupSharing() {
                                 ...item,
                                 id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
                             }));
+                            
+                            // עדכן שם ותאריך אם קיימים
+                            if (data.name) {
+                                currentListName = data.name;
+                            }
+                            if (data.createdAt) {
+                                if (typeof data.createdAt === 'number') {
+                                    currentListCreatedAt = new Date(data.createdAt).toISOString();
+                                } else {
+                                    currentListCreatedAt = data.createdAt;
+                                }
+                            }
+                            
                             saveToLocalStorage();
                             renderList();
                             updateSmartSummary();
+                            updateListNameDisplay();
                             detectRecurringItems();
                             console.log('✅ רשימה עודכנה בהצלחה');
                         } else {
@@ -2575,11 +2710,6 @@ async function loadSharedListFromFirebase() {
     }
 }
 
-// Flags למניעת race conditions
-let isUpdatingFromRemote = false;
-let isSyncing = false;
-let syncTimeout = null;
-
 // סנכרון רשימה משותפת ל-Firebase עם debouncing
 function debouncedSync() {
     clearTimeout(syncTimeout);
@@ -2612,9 +2742,20 @@ async function syncSharedList() {
         // צור רשימה ב-Firebase
         if (FirebaseManager && FirebaseManager.database) {
             const currentList = safeJSONParse(localStorage.getItem('shoppingList'), []);
+            // אם אין שם רשימה, צור אחד אוטומטית
+            if (!currentListName) {
+                currentListName = `רשימה ${new Date().toLocaleDateString('he-IL')}`;
+            }
+            if (!currentListCreatedAt) {
+                currentListCreatedAt = new Date().toISOString();
+            }
             await FirebaseManager.createList(sharedListId, {
-                items: currentList
+                items: currentList,
+                name: currentListName,
+                createdAt: currentListCreatedAt
             });
+            saveToLocalStorage();
+            updateListNameDisplay();
             console.log('✅ רשימה נוצרה ב-Firebase');
             
             // התחל האזנה
@@ -2631,7 +2772,7 @@ async function syncSharedList() {
     isSyncing = true;
     try {
         console.log('🔄 מסנכרן רשימה ל-Firebase:', sharedListId, 'עם', shoppingList.length, 'פריטים');
-        const success = await FirebaseManager.updateList(sharedListId, shoppingList);
+        const success = await FirebaseManager.updateList(sharedListId, shoppingList, currentListName);
         if (success) {
             console.log('✅ רשימה סונכרנה בהצלחה');
         } else {
@@ -2683,6 +2824,13 @@ function saveToLocalStorage() {
         // addedProducts נשמרים ב-Firestore - לא נשמרים ב-localStorage
         localStorage.setItem('shoppingHistory', JSON.stringify(shoppingHistory));
         localStorage.setItem('recurringItems', JSON.stringify(recurringItems));
+        // שמירת שם ותאריך רשימה
+        if (currentListName) {
+            localStorage.setItem('currentListName', currentListName);
+        }
+        if (currentListCreatedAt) {
+            localStorage.setItem('currentListCreatedAt', currentListCreatedAt);
+        }
     } catch (error) {
         console.error('שגיאה בשמירת הנתונים:', error);
         // Check if quota exceeded
@@ -2702,6 +2850,16 @@ function loadFromLocalStorage() {
             shoppingList = shoppingList.filter(item => 
                 item && item.id && item.name && validateItemName(item.name)
             );
+        }
+        
+        // טעינת שם ותאריך רשימה
+        const savedListName = localStorage.getItem('currentListName');
+        if (savedListName) {
+            currentListName = savedListName;
+        }
+        const savedListDate = localStorage.getItem('currentListCreatedAt');
+        if (savedListDate) {
+            currentListCreatedAt = savedListDate;
         }
         
         // addedProducts נטענים מ-Firestore - לא מ-localStorage
@@ -2768,7 +2926,7 @@ function handleSaveList() {
     
     // אם יש רשימה משותפת, נסנכרן גם ל-Firebase
     if (sharedListId) {
-        syncSharedList();
+        debouncedSync();
     }
     
     // הודעה למשתמש
@@ -2826,6 +2984,7 @@ async function handleNewList() {
     // עדכן את התצוגה
     renderList();
     updateSmartSummary();
+    updateListNameDisplay();
     switchTab('current');
     
     // הודעה למשתמש
@@ -2864,6 +3023,79 @@ window.addEventListener('unhandledrejection', (event) => {
     setTimeout(() => errorMsg.remove(), 5000);
 });
 
+// עדכון תצוגת שם ותאריך רשימה
+function updateListNameDisplay() {
+    const listTitle = document.getElementById('listTitle');
+    const listCreatedDate = document.getElementById('listCreatedDate');
+    const listDateInfo = document.getElementById('listDateInfo');
+    const editListNameBtn = document.getElementById('editListNameBtn');
+    
+    if (!listTitle) return;
+    
+    if (currentListName && currentListName.trim()) {
+        listTitle.textContent = currentListName;
+        if (editListNameBtn) {
+            editListNameBtn.style.display = 'inline-block';
+        }
+    } else {
+        listTitle.textContent = 'הרשימה שלי';
+        if (editListNameBtn) {
+            editListNameBtn.style.display = 'none';
+        }
+    }
+    
+    if (currentListCreatedAt && listCreatedDate && listDateInfo) {
+        try {
+            const date = new Date(currentListCreatedAt);
+            const dateStr = date.toLocaleDateString('he-IL', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            listCreatedDate.textContent = `נוצרה: ${dateStr}`;
+            listDateInfo.style.display = 'block';
+        } catch (error) {
+            console.error('שגיאה בעיצוב תאריך:', error);
+            listDateInfo.style.display = 'none';
+        }
+    } else {
+        if (listDateInfo) {
+            listDateInfo.style.display = 'none';
+        }
+    }
+}
+
+// עריכת שם רשימה
+function editListName() {
+    const currentName = currentListName || 'הרשימה שלי';
+    const newName = prompt('הכנס שם לרשימה:', currentName);
+    
+    if (!newName || !newName.trim()) {
+        return; // המשתמש ביטל
+    }
+    
+    // ולידציה של שם הרשימה
+    if (!validateListName(newName)) {
+        alert('שם הרשימה לא תקין. אנא הכנס שם תקין (עד 100 תווים).');
+        return;
+    }
+    
+    const trimmedName = newName.trim();
+    currentListName = trimmedName;
+    
+    // אם אין תאריך יצירה, צור אחד
+    if (!currentListCreatedAt) {
+        currentListCreatedAt = new Date().toISOString();
+    }
+    
+    saveToLocalStorage();
+    updateListNameDisplay();
+    debouncedSync(); // סנכרן עם Firebase
+    hapticFeedback();
+}
+
 // שמירת רשימה נוכחית לרשימות קיימות
 async function saveCurrentListToSavedLists() {
     if (shoppingList.length === 0) {
@@ -2884,11 +3116,20 @@ async function saveCurrentListToSavedLists() {
     
     const trimmedListName = listName.trim();
     
+    // עדכן את שם הרשימה הנוכחית
+    currentListName = trimmedListName;
+    if (!currentListCreatedAt) {
+        currentListCreatedAt = new Date().toISOString();
+    }
+    saveToLocalStorage();
+    updateListNameDisplay();
+    
     if (FirebaseManager && FirebaseManager.firestore) {
         const listId = await FirebaseManager.saveList({
             name: trimmedListName,
             items: shoppingList,
-            sharedListId: sharedListId
+            sharedListId: sharedListId,
+            createdAt: currentListCreatedAt
         });
         
         if (listId) {

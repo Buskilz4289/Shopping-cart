@@ -365,13 +365,15 @@ const FirebaseManager = {
 
         try {
             const listRef = this.database.ref(`lists/${listId}`);
+            const createdAt = initialData.createdAt ? new Date(initialData.createdAt).getTime() : firebase.database.ServerValue.TIMESTAMP;
             const data = {
                 items: initialData.items || [],
+                name: initialData.name || null,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP,
-                createdAt: firebase.database.ServerValue.TIMESTAMP
+                createdAt: createdAt
             };
             
-            console.log('יוצר רשימה חדשה ב-Firebase:', listId, 'עם', data.items.length, 'פריטים');
+            console.log('יוצר רשימה חדשה ב-Firebase:', listId, 'עם', data.items.length, 'פריטים', 'שם:', data.name);
             await listRef.set(data);
             console.log('רשימה נוצרה בהצלחה');
             return true;
@@ -397,7 +399,9 @@ const FirebaseManager = {
                 const data = snapshot.val();
                 const result = {
                     items: data.items || [],
-                    updatedAt: data.updatedAt || Date.now()
+                    updatedAt: data.updatedAt || Date.now(),
+                    name: data.name || null,
+                    createdAt: data.createdAt || null
                 };
                 if (callback) callback(result);
                 return Promise.resolve(result);
@@ -413,7 +417,7 @@ const FirebaseManager = {
     },
 
     // עדכון רשימה
-    async updateList(listId, items) {
+    async updateList(listId, items, listName = null) {
         if (!this.database) {
             console.warn('Firebase database לא זמין - שמירה בתור offline');
             this.addToOfflineQueue(listId, items);
@@ -432,6 +436,10 @@ const FirebaseManager = {
                 items: items,
                 updatedAt: firebase.database.ServerValue.TIMESTAMP
             };
+            // עדכן שם אם ניתן
+            if (listName) {
+                dataToUpdate.name = listName;
+            }
             console.log('שולח עדכון ל-Firebase:', listId, dataToUpdate);
             await listRef.update(dataToUpdate);
             console.log('עדכון הצליח');
@@ -466,7 +474,9 @@ const FirebaseManager = {
                 console.log('קיבלתי עדכון מ-Firebase:', data.items?.length || 0, 'פריטים');
                 callback({
                     items: data.items || [],
-                    updatedAt: data.updatedAt || Date.now()
+                    updatedAt: data.updatedAt || Date.now(),
+                    name: data.name || null,
+                    createdAt: data.createdAt || null
                 });
             } else {
                 console.log('רשימה לא קיימת ב-Firebase');

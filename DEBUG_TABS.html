@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>Debug Tabs</title>
+</head>
+<body>
+    <h1>Debug Tab Functionality</h1>
+    <p>פתח את ה-Console (F12) ובדוק את ההודעות</p>
+    <script>
+        // בדיקה מהירה
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('=== בדיקת טאבים ===');
+            const buttons = document.querySelectorAll('.tab-btn');
+            const contents = document.querySelectorAll('.tab-content');
+            console.log('כפתורים:', buttons.length);
+            console.log('תוכן:', contents.length);
+            
+            buttons.forEach((btn, i) => {
+                console.log(`כפתור ${i}:`, btn.dataset.tab, btn.textContent);
+            });
+            
+            contents.forEach((content, i) => {
+                console.log(`תוכן ${i}:`, content.id, content.className);
+            });
+        });
+    </script>
+</body>
+</html>
