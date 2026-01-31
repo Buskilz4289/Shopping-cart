@@ -194,6 +194,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // התחל האזנה לעדכוני רשימות קיימות מ-Firestore
     setupSavedListsListener();
+    
+    // טען היסטוריית קניות מ-Firestore (גלובלית)
+    await loadHistoryFromFirestore();
+    
+    // התחל האזנה לעדכוני היסטוריה מ-Firestore
+    setupHistoryListener();
 
     setupEventListeners();
     loadTheme();
@@ -1130,7 +1136,7 @@ function checkAndSaveHistory() {
 }
 
 // שמירת הרשימה הנוכחית להיסטוריה
-function saveCurrentListToHistory() {
+async function saveCurrentListToHistory() {
     if (shoppingList.length === 0) {
         return;
     }
@@ -1150,6 +1156,16 @@ function saveCurrentListToHistory() {
     
     if (shoppingHistory.length > 50) {
         shoppingHistory = shoppingHistory.slice(0, 50);
+    }
+    
+    // שמור ב-Firestore (גלובלי)
+    if (FirebaseManager && FirebaseManager.firestore) {
+        try {
+            await FirebaseManager.saveHistoryEntry(historyEntry);
+        } catch (error) {
+            console.warn('שגיאה בשמירת היסטוריה ל-Firestore:', error);
+            // המשך - זה לא קריטי, נשמר ב-localStorage
+        }
     }
     
     saveToLocalStorage();
@@ -3498,7 +3514,12 @@ async function loadSavedList(listId) {
         return;
     }
     
+    // מניעת עדכון מהרחוק בזמן טעינת רשימה
+    isUpdatingFromRemote = true;
+    
     console.log('📦 טוען', list.items.length, 'פריטים מהרשימה');
+    // החלף את כל הפריטים - לא merge, אלא החלפה מלאה
+    shoppingList = [];
     shoppingList = list.items.map((item, index) => {
         const newItem = {
             ...item,
@@ -3508,7 +3529,7 @@ async function loadSavedList(listId) {
         return newItem;
     });
     
-    console.log('✅ shoppingList עודכן:', shoppingList.length, 'פריטים');
+    console.log('✅ shoppingList עודכן:', shoppingList.length, 'פריטים (החלפה מלאה)');
     
     // עדכן את שם ותאריך הרשימה מהרשימה שנטענה
     currentListName = list.name;
@@ -3606,11 +3627,154 @@ async function loadSavedList(listId) {
     
     // עדכן את הרשימה ב-Firebase
     console.log('🔄 מסנכרן עם Firebase...');
-    debouncedSync();
+    // סנכרן ישירות (לא debounced) כדי להבטיח שהרשימה תתעדכן מיד
+    await syncSharedList();
+    
+    // אפשר עדכונים מהרחוק אחרי שהכל נטען ונשמר
+    setTimeout(() => {
+        isUpdatingFromRemote = false;
+        console.log('✅ אפשר עדכונים מהרחוק');
+    }, 1000);
     
     hapticFeedback();
     console.log('✅ רשימה נטענה בהצלחה!');
     alert(`רשימה "${list.name}" נטענה בהצלחה!`);
+}
+
+// טעינת היסטוריית קניות מ-Firestore
+async function loadHistoryFromFirestore() {
+    console.log('🔄 טעינת היסטוריית קניות...');
+    
+    if (FirebaseManager && FirebaseManager.firestore) {
+        try {
+            const firestoreHistory = await FirebaseManager.loadHistory();
+            if (firestoreHistory.length > 0) {
+                // מיזוג עם היסטוריה מקומית (אם יש)
+                const localHistoryIds = new Set(shoppingHistory.map(e => e.id));
+                const newEntries = firestoreHistory.filter(e => !localHistoryIds.has(e.id));
+                shoppingHistory = [...newEntries, ...shoppingHistory];
+                
+                // מיון לפי תאריך (החדש ביותר ראשון)
+                shoppingHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // הגבל ל-50 כניסות
+                if (shoppingHistory.length > CONSTANTS.MAX_HISTORY_ENTRIES) {
+                    shoppingHistory = shoppingHistory.slice(0, CONSTANTS.MAX_HISTORY_ENTRIES);
+                }
+                
+                console.log('✅ נטענו', firestoreHistory.length, 'כניסות היסטוריה מ-Firestore');
+                saveToLocalStorage();
+                renderHistory();
+            } else {
+                console.log('ℹ️ אין היסטוריה ב-Firestore');
+            }
+        } catch (error) {
+            console.error('❌ שגיאה בטעינת היסטוריה:', error);
+            // המשך עם היסטוריה מקומית
+        }
+    } else {
+        console.log('⚠️ אין Firestore - משתמש בהיסטוריה מקומית');
+    }
+}
+
+// האזנה לעדכוני היסטוריה מ-Firestore בזמן אמת
+let historyListener = null;
+function setupHistoryListener() {
+    if (!FirebaseManager || !FirebaseManager.firestore) {
+        return; // אין Firestore - אין האזנה
+    }
+    
+    // הסר האזנה קודמת אם קיימת
+    if (historyListener) {
+        historyListener();
+        historyListener = null;
+    }
+    
+    console.log('📡 מתחיל האזנה לעדכוני היסטוריה מ-Firestore');
+    
+    // פונקציה משותפת לעיבוד snapshot
+    const handleHistorySnapshot = (snapshot) => {
+        console.log('📡 האזנה: עדכון היסטוריה מ-Firestore:', snapshot.docs.length, 'כניסות');
+        
+        // עדכן את shoppingHistory array
+        let newHistory = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: data.id || doc.id,
+                date: data.date || new Date().toISOString(),
+                items: data.items || []
+            };
+        });
+        
+        // מיון לפי תאריך (החדש ביותר ראשון)
+        newHistory.sort((a, b) => new Date(b.date) - new Date(a.date));
+        
+        // הגבל ל-50 כניסות
+        if (newHistory.length > CONSTANTS.MAX_HISTORY_ENTRIES) {
+            newHistory = newHistory.slice(0, CONSTANTS.MAX_HISTORY_ENTRIES);
+        }
+        
+        // עדכן תמיד - ההאזנה היא המקור האמת
+        shoppingHistory = newHistory;
+        console.log('✅ האזנה: עודכן shoppingHistory array:', shoppingHistory.length, 'כניסות');
+        
+        // עדכן תצוגה
+        saveToLocalStorage();
+        renderHistory();
+        detectRecurringItems();
+    };
+    
+    // האזנה לכל השינויים ב-collection shoppingHistory
+    try {
+        historyListener = FirebaseManager.firestore.collection('shoppingHistory')
+            .orderBy('date', 'desc')
+            .limit(50)
+            .onSnapshot((snapshot) => {
+                handleHistorySnapshot(snapshot);
+            }, (error) => {
+                // אם orderBy נכשל, נסה בלי orderBy
+                if (error.code === 'failed-precondition' || error.code === 'unavailable') {
+                    console.warn('⚠️ orderBy נכשל - מנסה בלי orderBy:', error.message);
+                    try {
+                        historyListener = FirebaseManager.firestore.collection('shoppingHistory')
+                            .limit(50)
+                            .onSnapshot((snapshot) => {
+                                handleHistorySnapshot(snapshot);
+                            }, (snapshotError) => {
+                                console.error('❌ שגיאה בהאזנה להיסטוריה:', snapshotError);
+                                if (snapshotError.code === 'permission-denied') {
+                                    console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                                }
+                            });
+                    } catch (e) {
+                        console.error('❌ שגיאה ביצירת האזנה בלי orderBy:', e);
+                    }
+                } else {
+                    console.error('❌ שגיאה בהאזנה להיסטוריה:', error);
+                    if (error.code === 'permission-denied') {
+                        console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                    }
+                }
+            });
+        console.log('✅ האזנה להיסטוריה הופעלה');
+    } catch (error) {
+        console.warn('⚠️ שגיאה בהתחלת האזנה - מנסה בלי orderBy:', error);
+        try {
+            historyListener = FirebaseManager.firestore.collection('shoppingHistory')
+                .limit(50)
+                .onSnapshot((snapshot) => {
+                    handleHistorySnapshot(snapshot);
+                }, (snapshotError) => {
+                    console.error('❌ שגיאה בהאזנה להיסטוריה:', snapshotError);
+                    if (snapshotError.code === 'permission-denied') {
+                        console.error('❌ שגיאת הרשאות - בדוק את כללי האבטחה ב-Firestore');
+                    }
+                });
+            console.log('✅ האזנה להיסטוריה הופעלה (בלי orderBy)');
+        } catch (e) {
+            console.error('❌ שגיאה ביצירת האזנה:', e);
+        }
+    }
 }
 
 // מחיקת רשימה קיימת
@@ -3917,6 +4081,16 @@ async function finishShoppingSession() {
     // הגבלת גודל ההיסטוריה ל-50 כניסות
     if (shoppingHistory.length > 50) {
         shoppingHistory = shoppingHistory.slice(0, 50);
+    }
+    
+    // שמור ב-Firestore (גלובלי)
+    if (FirebaseManager && FirebaseManager.firestore) {
+        try {
+            await FirebaseManager.saveHistoryEntry(historyEntry);
+        } catch (error) {
+            console.warn('שגיאה בשמירת היסטוריה ל-Firestore:', error);
+            // המשך - זה לא קריטי, נשמר ב-localStorage
+        }
     }
     
     // הסרת כל הפריטים שנקנו מהרשימה הפעילה

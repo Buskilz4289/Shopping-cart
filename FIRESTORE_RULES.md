@@ -37,6 +37,14 @@ service cloud.firestore {
       allow update: if true;  // כל אחד יכול לעדכן
       allow delete: if true;  // כל אחד יכול למחוק
     }
+    
+    // היסטוריית קניות - משותפת לכל המשתמשים
+    match /shoppingHistory/{historyId} {
+      allow read: if true;  // כל אחד יכול לקרוא
+      allow create: if true;  // כל אחד יכול ליצור
+      allow update: if true;  // כל אחד יכול לעדכן
+      allow delete: if true;  // כל אחד יכול למחוק
+    }
   }
 }
 ```
@@ -54,6 +62,7 @@ service cloud.firestore {
 
 - `addedProducts` - collection של מוצרים שהוספו (גלובלי)
 - `savedLists` - collection של רשימות קיימות (גלובלי)
+- `shoppingHistory` - collection של היסטוריית קניות (גלובלי)
 - `allow read: if true` - כל אחד יכול לקרוא
 - `allow create: if true` - כל אחד יכול ליצור
 - `allow update: if true` - כל אחד יכול לעדכן
@@ -74,4 +83,5 @@ service cloud.firestore {
 לך ל-Firestore Database → Data ובדוק:
 - אם יש collection `addedProducts` - הכללים עובדים
 - אם יש collection `savedLists` - הכללים עובדים
+- אם יש collection `shoppingHistory` - הכללים עובדים
 - אם אין כלום - צריך לבדוק את הכללים שוב

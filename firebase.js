@@ -710,6 +710,82 @@ const FirebaseManager = {
             databaseExists: !!this.database,
             isOnline: this.isOnline
         };
+    },
+
+    // ---------- היסטוריית קניות משותפת (Firestore collection: shoppingHistory) ----------
+    // כל המשתמשים רואים את אותה היסטוריה
+
+    /** שמירת כניסה חדשה להיסטוריה */
+    async saveHistoryEntry(historyEntry) {
+        if (!this.firestore || !historyEntry) return null;
+        try {
+            console.log('💾 שומר כניסה להיסטוריה:', historyEntry.id);
+            const docRef = await this.firestore.collection('shoppingHistory').add({
+                id: historyEntry.id,
+                date: historyEntry.date,
+                items: historyEntry.items,
+                createdAt: new Date().toISOString()
+            });
+            console.log('✅ כניסה נשמרה להיסטוריה, ID:', docRef.id);
+            return docRef.id;
+        } catch (error) {
+            console.error('❌ שגיאה בשמירת כניסה להיסטוריה:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון: ראה FIRESTORE_RULES.md');
+            }
+            return null;
+        }
+    },
+
+    /** טעינת כל ההיסטוריה */
+    async loadHistory() {
+        if (!this.firestore) return [];
+        try {
+            console.log('🔄 טוען היסטוריית קניות מ-Firestore...');
+            let snapshot;
+            try {
+                snapshot = await this.firestore.collection('shoppingHistory')
+                    .orderBy('date', 'desc')
+                    .limit(50)
+                    .get();
+                console.log('✅ טעינת היסטוריה עם orderBy הצליחה:', snapshot.docs.length, 'כניסות');
+            } catch (orderByError) {
+                if (orderByError.code === 'failed-precondition') {
+                    console.warn('⚠️ orderBy נכשל - טוען בלי orderBy');
+                    snapshot = await this.firestore.collection('shoppingHistory')
+                        .limit(50)
+                        .get();
+                    console.log('✅ טעינת היסטוריה בלי orderBy הצליחה:', snapshot.docs.length, 'כניסות');
+                } else {
+                    throw orderByError;
+                }
+            }
+            
+            const history = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: data.id || doc.id,
+                    date: data.date || new Date().toISOString(),
+                    items: data.items || []
+                };
+            });
+            
+            // מיון ידני אם לא היה orderBy
+            if (history.length > 0 && (!snapshot.query || !snapshot.query.orderBy)) {
+                history.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }
+            
+            console.log('✅ נטענו', history.length, 'כניסות היסטוריה מ-Firestore');
+            return history;
+        } catch (error) {
+            console.error('❌ שגיאה בטעינת היסטוריה:', error);
+            if (error.code === 'permission-denied' || error.message.includes('permission')) {
+                console.error('❌ שגיאת הרשאות ב-Firestore!');
+                console.error('📋 פתרון: ראה FIRESTORE_RULES.md');
+            }
+            return [];
+        }
     }
 };
 
