@@ -19,34 +19,7 @@ FirebaseError: Missing or insufficient permissions.
 **החלף** את כל הקוד ב-Rules בקוד הבא:
 
 ```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // מוצרים שהוספתי - גלובליים לכל המשתמשים
-    match /addedProducts/{productId} {
-      allow read: if true;  // כל אחד יכול לקרוא
-      allow create: if true;  // כל אחד יכול ליצור
-      allow update: if true;  // כל אחד יכול לעדכן
-      allow delete: if true;  // כל אחד יכול למחוק
-    }
-    
-    // רשימות קיימות - גלובליות לכל המשתמשים
-    match /savedLists/{listId} {
-      allow read: if true;  // כל אחד יכול לקרוא
-      allow create: if true;  // כל אחד יכול ליצור
-      allow update: if true;  // כל אחד יכול לעדכן
-      allow delete: if true;  // כל אחד יכול למחוק
-    }
-    
-    // היסטוריית קניות - משותפת לכל המשתמשים
-    match /shoppingHistory/{historyId} {
-      allow read: if true;  // כל אחד יכול לקרוא
-      allow create: if true;  // כל אחד יכול ליצור
-      allow update: if true;  // כל אחד יכול לעדכן
-      allow delete: if true;  // כל אחד יכול למחוק
-    }
-  }
-}
+C
 ```
 
 ### שלב 3: שמור

@@ -2425,6 +2425,11 @@ function setupSharing() {
                     console.log('ℹ️ מתעלם מעדכון רחוק - סנכרון מקומי פעיל');
                     return;
                 }
+                // כשטוענים רשימה קיימת – אל תדרוס את הרשימה בעדכון מ-Firebase (לעיתים נתונים ישנים)
+                if (isUpdatingFromRemote) {
+                    console.log('ℹ️ מתעלם מעדכון רחוק - טעינת רשימה מקומית פעילה');
+                    return;
+                }
                 
                 if (data && data.items) {
                     isUpdatingFromRemote = true;
@@ -3518,14 +3523,18 @@ async function loadSavedList(listId) {
     isUpdatingFromRemote = true;
     
     console.log('📦 טוען', list.items.length, 'פריטים מהרשימה');
-    // החלף את כל הפריטים - לא merge, אלא החלפה מלאה
+    // החלף את כל הפריטים - לא merge, אלא החלפה מלאה. נרמול שדות חיוניים לתצוגה.
     shoppingList = [];
     shoppingList = list.items.map((item, index) => {
         const newItem = {
             ...item,
-            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9)
+            id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            name: (item.name != null && String(item.name).trim()) ? String(item.name).trim() : 'פריט ללא שם',
+            quantity: item.quantity != null ? String(item.quantity) : '1',
+            category: item.category != null ? String(item.category).trim() : '',
+            purchased: Boolean(item.purchased)
         };
-        console.log(`  פריט ${index + 1}:`, newItem.name || newItem.id);
+        console.log(`  פריט ${index + 1}:`, newItem.name);
         return newItem;
     });
     
