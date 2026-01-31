@@ -129,12 +129,11 @@
                 </form>
             </section>
 
-            <!-- Navigation Tabs -->
+            <!-- Navigation Tabs (רק רשימות קיימות, מוצרים שהוספתי, היסטוריה) -->
             <nav class="tabs-nav">
-                <button class="tab-btn active" data-tab="current">הרשימה שלי</button>
+                <button class="tab-btn active" data-tab="saved">רשימות קיימות</button>
                 <button class="tab-btn" data-tab="added">מוצרים שהוספתי</button>
                 <button class="tab-btn" data-tab="history">היסטוריית קניות</button>
-                <button class="tab-btn" data-tab="saved">רשימות קיימות</button>
             </nav>
 
             <!-- Sharing Section -->
@@ -157,40 +156,6 @@
                         <button id="stopSharing" class="btn btn-danger">הפסק שיתוף</button>
                     </div>
                 </div>
-            </section>
-
-            <!-- Current Shopping list -->
-            <section id="currentTab" class="tab-content active">
-                <div class="list-header">
-                    <div class="list-title-section">
-                        <h2 id="listTitle" class="list-title">הרשימה שלי</h2>
-                        <button id="editListNameBtn" class="btn-icon-small" aria-label="ערוך שם רשימה" title="ערוך שם רשימה" style="display: none;">
-                            ✏️
-                        </button>
-                    </div>
-                    <div id="listDateInfo" class="list-date-info" style="display: none;">
-                        <span id="listCreatedDate"></span>
-                    </div>
-                    <div class="list-actions">
-                        <button id="newListBtn" class="btn btn-primary btn-small">✨ רשימה חדשה</button>
-                        <button id="saveListBtn" class="btn btn-primary btn-small">💾 שמור רשימה</button>
-                        <button id="exportListBtn" class="btn btn-secondary btn-small">📤 ייצא רשימה</button>
-                        <button id="shareListBtn" class="btn btn-secondary btn-small">🔗 שתף רשימה</button>
-                        <button id="smartCleanupBtn" class="btn btn-secondary btn-small" style="display: none;">
-                            🧹 נקה כפילויות
-                        </button>
-                        <button id="clearPurchasedBtn" class="btn btn-secondary btn-small" style="display: none;">
-                            נקה פריטים שנקנו
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="emptyState" class="empty-state">
-                    <p>📦 הרשימה ריקה</p>
-                    <p class="empty-state-hint">הוסף פריטים כדי להתחיל</p>
-                </div>
-                
-                <ul id="shoppingList" class="shopping-list"></ul>
             </section>
 
             <!-- Shopping Mode (Simplified) -->
@@ -259,18 +224,47 @@
                 <div id="historyList" class="history-list"></div>
             </section>
 
-            <!-- Saved Lists Section -->
-            <section id="savedTab" class="tab-content">
+            <!-- Saved Lists Section – רשימות קיימות בלבד; לחיצה על רשימה פותחת לעריכה (משותף לכל המשתמשים) -->
+            <section id="savedTab" class="tab-content active">
                 <div class="list-header">
                     <h2>רשימות קיימות</h2>
+                    <button id="newListBtn" class="btn btn-primary btn-small">✨ רשימה חדשה</button>
                 </div>
                 
                 <div id="savedEmptyState" class="empty-state">
                     <p>📋 אין רשימות קיימות</p>
-                    <p class="empty-state-hint">רשימות שתיצור יופיעו כאן</p>
+                    <p class="empty-state-hint">לחץ "רשימה חדשה" או בחר רשימה לעריכה (משותף לכל המשתמשים)</p>
                 </div>
                 
                 <ul id="savedLists" class="saved-lists"></ul>
+                
+                <!-- תוכן הרשימה הנבחרת – מוצג כשנלחץ על רשימה; עריכה משותפת לכל המשתמשים -->
+                <div id="selectedListContent" class="selected-list-content" style="display: none;">
+                    <div class="list-header list-header-selected">
+                        <div class="list-title-section">
+                            <h2 id="listTitle" class="list-title"></h2>
+                            <button id="editListNameBtn" class="btn-icon-small" aria-label="ערוך שם רשימה" title="ערוך שם רשימה">
+                                ✏️
+                            </button>
+                        </div>
+                        <div id="listDateInfo" class="list-date-info" style="display: none;">
+                            <span id="listCreatedDate"></span>
+                        </div>
+                        <div class="list-actions">
+                            <button id="backToListBtn" class="btn btn-secondary btn-small">← חזרה לרשימות</button>
+                            <button id="saveListBtn" class="btn btn-primary btn-small">💾 שמור</button>
+                            <button id="exportListBtn" class="btn btn-secondary btn-small">📤 ייצא</button>
+                            <button id="shareListBtn" class="btn btn-secondary btn-small">🔗 שתף</button>
+                            <button id="smartCleanupBtn" class="btn btn-secondary btn-small" style="display: none;">🧹 נקה כפילויות</button>
+                            <button id="clearPurchasedBtn" class="btn btn-secondary btn-small" style="display: none;">נקה פריטים שנקנו</button>
+                        </div>
+                    </div>
+                    <div id="emptyState" class="empty-state">
+                        <p>📦 הרשימה ריקה</p>
+                        <p class="empty-state-hint">הוסף פריטים למעלה</p>
+                    </div>
+                    <ul id="shoppingList" class="shopping-list"></ul>
+                </div>
             </section>
         </main>
     </div>
