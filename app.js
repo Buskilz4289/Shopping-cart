@@ -3476,57 +3476,52 @@ function createSavedListItem(list) {
     return li;
 }
 
-// טעינת רשימה קיימת
+// טעינת רשימה מרשימות קיימות – משתמשת בגרסה העדכנית מ-Firestore ובהרשימה החיה מ-Realtime DB
 async function loadSavedList(listId) {
     console.log('🔄 טוען רשימה:', listId);
-    const list = savedLists.find(l => l.id === listId);
+    // טעינה תמידית מ-Firestore כדי לקבל sharedListId מעודכן (אם משתמש אחר כבר טען את הרשימה)
+    let list = FirebaseManager && FirebaseManager.firestore
+        ? await FirebaseManager.getSavedList(listId)
+        : null;
+    if (!list) {
+        list = savedLists.find(l => l.id === listId);
+    }
     if (!list) {
         console.error('❌ רשימה לא נמצאה:', listId);
         alert('רשימה לא נמצאה');
         return;
     }
-    
+    // עדכון המטמון המקומי כדי שיציג sharedListId עדכני
+    savedLists = savedLists.map(l => (l.id === listId ? list : l));
+
     console.log('📋 פרטי הרשימה:', {
         id: list.id,
         name: list.name,
-        itemsCount: list.items?.length || 0,
-        items: list.items
+        sharedListId: list.sharedListId,
+        itemsCount: list.items?.length || 0
     });
-    
-    // שאל את המשתמש אם הוא רוצה להחליף את הרשימה הנוכחית
+
     if (shoppingList.length > 0) {
         if (!confirm('האם אתה בטוח שברצונך לטעון רשימה זו? הרשימה הנוכחית תוחלף.')) {
             return;
         }
     }
-    
-    // שמור את הרשימה הנוכחית לרשימות קיימות אם יש פריטים ושם רשימה
-    // (רק אם יש שם רשימה - לא נשאל שם חדש)
+
     if (shoppingList.length > 0 && currentListName) {
-        // שמור את הרשימה הנוכחית עם השם הקיים (ללא prompt)
         try {
             await autoSaveListToSavedLists();
         } catch (error) {
             console.warn('שגיאה בשמירת הרשימה הנוכחית:', error);
-            // המשך - זה לא קריטי
         }
     }
-    
-    // טען את הרשימה
-    if (!list.items || !Array.isArray(list.items)) {
-        console.error('❌ הרשימה לא מכילה פריטים תקינים:', list);
-        alert('הרשימה ריקה או פגומה');
-        return;
-    }
-    
-    // מניעת עדכון מהרחוק בזמן טעינת רשימה
+
     isUpdatingFromRemote = true;
-    
-    console.log('📦 טוען', list.items.length, 'פריטים מהרשימה');
-    // החלף את כל הפריטים - לא merge, אלא החלפה מלאה. נרמול שדות חיוניים לתצוגה.
-    shoppingList = [];
-    shoppingList = list.items.map((item, index) => {
-        const newItem = {
+    currentListName = list.name;
+    currentListCreatedAt = list.createdAt || new Date().toISOString();
+    currentSavedListId = list.id;
+
+    function normalizeItem(item) {
+        return {
             ...item,
             id: item.id || Date.now().toString() + Math.random().toString(36).substr(2, 9),
             name: (item.name != null && String(item.name).trim()) ? String(item.name).trim() : 'פריט ללא שם',
@@ -3534,63 +3529,92 @@ async function loadSavedList(listId) {
             category: item.category != null ? String(item.category).trim() : '',
             purchased: Boolean(item.purchased)
         };
-        console.log(`  פריט ${index + 1}:`, newItem.name);
-        return newItem;
-    });
-    
-    console.log('✅ shoppingList עודכן:', shoppingList.length, 'פריטים (החלפה מלאה)');
-    
-    // עדכן את שם ותאריך הרשימה מהרשימה שנטענה
-    currentListName = list.name;
-    currentListCreatedAt = list.createdAt || new Date().toISOString();
-    currentSavedListId = list.id;
-    
-    // עדכן sharedListId אם יש
+    }
+
     if (list.sharedListId) {
+        // יש רשימה משותפת – טוענים את התוכן הנוכחי מ-Realtime DB (כולל מוצרים שמשתמשים אחרים הוסיפו)
         sharedListId = list.sharedListId;
         localStorage.setItem('sharedListId', sharedListId);
         updateUrlWithListId();
-        
-        // עדכן את הרשימה ב-Firebase Realtime Database (חשוב: להחליף את כל הפריטים)
+
         if (FirebaseManager && FirebaseManager.database) {
             try {
-                console.log('🔄 מעדכן רשימה ב-Firebase Realtime Database:', sharedListId);
-                const success = await FirebaseManager.updateList(sharedListId, shoppingList, currentListName);
-                if (success) {
-                    console.log('✅ רשימה עודכנה ב-Firebase Realtime Database');
-                } else {
-                    console.warn('⚠️ עדכון ב-Firebase Realtime Database נכשל - מנסה ליצור רשימה חדשה');
-                    // אם עדכון נכשל, נסה ליצור רשימה חדשה
-                    await FirebaseManager.createList(sharedListId, {
-                        items: shoppingList,
-                        name: currentListName,
-                        createdAt: currentListCreatedAt
+                const data = await new Promise((resolve) => {
+                    FirebaseManager.loadList(sharedListId, (d) => resolve(d));
+                });
+                if (data && Array.isArray(data.items)) {
+                    console.log('📦 טוען מהרשימה החיה (Realtime DB):', data.items.length, 'פריטים');
+                    shoppingList = data.items.map((item, index) => {
+                        const newItem = normalizeItem(item);
+                        console.log(`  פריט ${index + 1}:`, newItem.name);
+                        return newItem;
                     });
+                    if (data.name) currentListName = data.name;
+                    if (data.createdAt) {
+                        currentListCreatedAt = typeof data.createdAt === 'number'
+                            ? new Date(data.createdAt).toISOString()
+                            : data.createdAt;
+                    }
+                } else {
+                    // רשימה ריקה או לא קיימת – שימוש בפריטים מ-Firestore
+                    const items = list.items || [];
+                    if (!Array.isArray(items)) {
+                        alert('הרשימה ריקה או פגומה');
+                        isUpdatingFromRemote = false;
+                        return;
+                    }
+                    console.log('📦 טוען Firestore (ללא תוכן ב-Realtime DB):', items.length, 'פריטים');
+                    shoppingList = items.map((item, index) => {
+                        const newItem = normalizeItem(item);
+                        console.log(`  פריט ${index + 1}:`, newItem.name);
+                        return newItem;
+                    });
+                    await FirebaseManager.updateList(sharedListId, shoppingList, currentListName);
                 }
             } catch (error) {
-                console.warn('שגיאה בעדכון רשימה ב-Firebase Realtime Database:', error);
-                // נסה ליצור רשימה חדשה אם עדכון נכשל
+                console.warn('שגיאה בטעינת רשימה מ-Realtime DB, משתמש בפריטים מ-Firestore:', error);
+                const items = list.items || [];
+                if (!Array.isArray(items)) {
+                    alert('הרשימה ריקה או פגומה');
+                    isUpdatingFromRemote = false;
+                    return;
+                }
+                shoppingList = items.map((item) => normalizeItem(item));
                 try {
-                    await FirebaseManager.createList(sharedListId, {
-                        items: shoppingList,
-                        name: currentListName,
-                        createdAt: currentListCreatedAt
-                    });
-                } catch (createError) {
-                    console.error('שגיאה ביצירת רשימה ב-Firebase:', createError);
+                    await FirebaseManager.updateList(sharedListId, shoppingList, currentListName);
+                } catch (e) {
+                    console.warn('שגיאה בעדכון Realtime DB:', e);
                 }
             }
+        } else {
+            const items = list.items || [];
+            if (!Array.isArray(items)) {
+                alert('הרשימה ריקה או פגומה');
+                isUpdatingFromRemote = false;
+                return;
+            }
+            shoppingList = items.map((item) => normalizeItem(item));
         }
-        
-        // התחל האזנה לעדכונים
         setupSharing();
     } else {
-        // צור sharedListId חדש
+        // אין רשימה משותפת – שימוש בפריטים מ-Firestore ויצירת sharedListId חדש
+        const items = list.items || [];
+        if (!Array.isArray(items)) {
+            alert('הרשימה ריקה או פגומה');
+            isUpdatingFromRemote = false;
+            return;
+        }
+        console.log('📦 טוען Firestore:', items.length, 'פריטים');
+        shoppingList = items.map((item, index) => {
+            const newItem = normalizeItem(item);
+            console.log(`  פריט ${index + 1}:`, newItem.name);
+            return newItem;
+        });
+
         sharedListId = 'list-' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sharedListId', sharedListId);
         updateUrlWithListId();
-        
-        // עדכן את הרשימה ב-Firestore עם sharedListId החדש
+
         if (FirebaseManager && FirebaseManager.firestore) {
             try {
                 await FirebaseManager.updateSavedList(listId, {
@@ -3603,8 +3627,7 @@ async function loadSavedList(listId) {
                 console.warn('שגיאה בעדכון sharedListId ב-Firestore:', error);
             }
         }
-        
-        // צור רשימה ב-Firebase Realtime Database
+
         if (FirebaseManager && FirebaseManager.database) {
             try {
                 await FirebaseManager.createList(sharedListId, {
@@ -3618,11 +3641,10 @@ async function loadSavedList(listId) {
             }
         }
     }
-    
+
+    console.log('✅ shoppingList עודכן:', shoppingList.length, 'פריטים');
     console.log('💾 שומר ל-localStorage...');
     saveToLocalStorage();
-    
-    console.log('🎨 מעדכן תצוגה...');
     updateListNameDisplay();
     console.log('📋 קורא ל-renderList() עם', shoppingList.length, 'פריטים');
     renderList();
@@ -3630,21 +3652,24 @@ async function loadSavedList(listId) {
     renderHistory();
     updateSmartSummary();
     detectRecurringItems();
-    
-    console.log('🔄 מעבר לטאב "הרשימה שלי"...');
     switchTab('current');
-    
-    // עדכן את הרשימה ב-Firebase
-    console.log('🔄 מסנכרן עם Firebase...');
-    // סנכרן ישירות (לא debounced) כדי להבטיח שהרשימה תתעדכן מיד
-    await syncSharedList();
-    
-    // אפשר עדכונים מהרחוק אחרי שהכל נטען ונשמר
+
+    if (list.sharedListId) {
+        // כבר טענו מ-Realtime DB – רק מסנכרנים אם צריך
+        try {
+            await syncSharedList();
+        } catch (e) {
+            console.warn('syncSharedList:', e);
+        }
+    } else {
+        await syncSharedList();
+    }
+
     setTimeout(() => {
         isUpdatingFromRemote = false;
-        console.log('✅ אפשר עדכונים מהרחוק');
+        console.log('✅ אפשר עדכונים מהרחוק – עדכונים ממשתמשים אחרים יופיעו ברשימה');
     }, 1000);
-    
+
     hapticFeedback();
     console.log('✅ רשימה נטענה בהצלחה!');
     alert(`רשימה "${list.name}" נטענה בהצלחה!`);

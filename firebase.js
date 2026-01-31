@@ -386,6 +386,27 @@ const FirebaseManager = {
         }
     },
 
+    /** טעינת רשימה קיימת בודדת לפי ID (לקבלת הגרסה העדכנית כולל sharedListId) */
+    async getSavedList(listId) {
+        if (!this.firestore || !listId) return null;
+        try {
+            const doc = await this.firestore.collection('savedLists').doc(listId).get();
+            if (!doc.exists) return null;
+            const data = doc.data();
+            return {
+                id: doc.id,
+                name: data.name || 'רשימה ללא שם',
+                items: data.items || [],
+                createdAt: data.createdAt || new Date().toISOString(),
+                updatedAt: data.updatedAt || new Date().toISOString(),
+                sharedListId: data.sharedListId || null
+            };
+        } catch (error) {
+            console.error('שגיאה בטעינת רשימה קיימת:', error);
+            return null;
+        }
+    },
+
     /** מחיקת רשימה קיימת */
     async deleteSavedList(listId) {
         if (!this.firestore || !listId) return false;
