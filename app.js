@@ -3520,6 +3520,39 @@ async function loadSavedList(listId) {
         sharedListId = list.sharedListId;
         localStorage.setItem('sharedListId', sharedListId);
         updateUrlWithListId();
+        
+        // עדכן את הרשימה ב-Firebase Realtime Database (חשוב: להחליף את כל הפריטים)
+        if (FirebaseManager && FirebaseManager.database) {
+            try {
+                console.log('🔄 מעדכן רשימה ב-Firebase Realtime Database:', sharedListId);
+                const success = await FirebaseManager.updateList(sharedListId, shoppingList, currentListName);
+                if (success) {
+                    console.log('✅ רשימה עודכנה ב-Firebase Realtime Database');
+                } else {
+                    console.warn('⚠️ עדכון ב-Firebase Realtime Database נכשל - מנסה ליצור רשימה חדשה');
+                    // אם עדכון נכשל, נסה ליצור רשימה חדשה
+                    await FirebaseManager.createList(sharedListId, {
+                        items: shoppingList,
+                        name: currentListName,
+                        createdAt: currentListCreatedAt
+                    });
+                }
+            } catch (error) {
+                console.warn('שגיאה בעדכון רשימה ב-Firebase Realtime Database:', error);
+                // נסה ליצור רשימה חדשה אם עדכון נכשל
+                try {
+                    await FirebaseManager.createList(sharedListId, {
+                        items: shoppingList,
+                        name: currentListName,
+                        createdAt: currentListCreatedAt
+                    });
+                } catch (createError) {
+                    console.error('שגיאה ביצירת רשימה ב-Firebase:', createError);
+                }
+            }
+        }
+        
+        // התחל האזנה לעדכונים
         setupSharing();
     } else {
         // צור sharedListId חדש
@@ -3541,7 +3574,7 @@ async function loadSavedList(listId) {
             }
         }
         
-        // צור רשימה ב-Firebase
+        // צור רשימה ב-Firebase Realtime Database
         if (FirebaseManager && FirebaseManager.database) {
             try {
                 await FirebaseManager.createList(sharedListId, {
